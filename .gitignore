@@ -1,0 +1,4 @@
+./firmware/build/*
+./firmware/.settings/*
+./firmware/.cproject
+./firmware/.project
