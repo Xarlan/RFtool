@@ -1,4 +1,7 @@
-./firmware/build/*
-./firmware/.settings/*
-./firmware/.cproject
-./firmware/.project
+firmware/build/*
+firmware/.settings/*
+firmware/.cproject
+firmware/.project
+firmware/main/.cproject
+firmware/main/.project
+firmware/main/.settings/
