@@ -72,10 +72,17 @@ void vUartTask(void *pvParameters)
 
 	printf("UART Ok\n");
 
-	raw_802_11_t raw_wifi_pkt;
+	wireshark_802_11_t raw_wifi_pkt;
+	portBASE_TYPE xStatus;
 
 	while( 1 )
 	{
+		xStatus = xQueueReceive(qRawWifiPkt, &raw_wifi_pkt, 0);
+		if (xStatus == pdPASS)
+		{
+			printf("len pkt = %d\n", raw_wifi_pkt.len_pkt);
+		}
+
 
 		uart_write_bytes(UART_NUM_0, "*** Ready!\r\n ***", 8);
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -90,33 +97,51 @@ void vUartTask(void *pvParameters)
 *******************************************************************************/
 void captured_wifi_packet(void *buff, wifi_promiscuous_pkt_type_t type)
 {
-	wifi_promiscuous_pkt_t *rawPkt_802_11 = (wifi_promiscuous_pkt_t *)buff;
+//	wifi_promiscuous_pkt_t *rawPkt_802_11 = (wifi_promiscuous_pkt_t *)buff;
 
-	switch(type)
+	wifi_promiscuous_pkt_t *raw_pkt_802_11 = (wifi_promiscuous_pkt_t *)buff;
+
+	wireshark_802_11_t wifi_pkt;
+
+//	switch(type)
+//	{
+//		case WIFI_PKT_MGMT:
+//			printf("Type pkt = 'MGMT'\n");
+//			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
+//			break;
+//
+//		case WIFI_PKT_CTRL:
+//			printf("Type pkt = 'CTRL'\n");
+//			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
+//			break;
+//
+//		case WIFI_PKT_DATA:
+//			printf("Type pkt = 'DATA'\n");
+//			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
+//			break;
+//
+//		case WIFI_PKT_MISC:
+//			printf("Type pkt = 'MIMO'\n");
+//			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
+//			break;
+//
+//		default:
+//			printf("Unknown pkt type\n");
+//			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
+//	}
+
+	if ( raw_pkt_802_11->rx_ctrl.sig_len <= SIZE_RAW_802_11 )
 	{
-		case WIFI_PKT_MGMT:
-			printf("Type pkt = 'MGMT'\n");
-			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
-			break;
+		wifi_pkt.len_pkt = raw_pkt_802_11->rx_ctrl.sig_len;
+//		MEMCPY(wifi_pkt.pkt, raw_pkt_802_11->payload, raw_pkt_802_11->rx_ctrl.sig_len);
+//		wifi_pkt.pkt = raw_pkt_802_11->payload;
+		xQueueSend(qRawWifiPkt, &wifi_pkt, 0);
 
-		case WIFI_PKT_CTRL:
-			printf("Type pkt = 'CTRL'\n");
-			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
-			break;
-
-		case WIFI_PKT_DATA:
-			printf("Type pkt = 'DATA'\n");
-			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
-			break;
-
-		case WIFI_PKT_MISC:
-			printf("Type pkt = 'MIMO'\n");
-			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
-			break;
-
-		default:
-			printf("Unknown pkt type\n");
-			printf("%d \n", rawPkt_802_11->rx_ctrl.sig_len);
+	}
+	else
+	{
+		printf("\n Packet too large\n");
+		printf("Type of packet - %d", type);
 	}
 
 }
@@ -128,7 +153,7 @@ void captured_wifi_packet(void *buff, wifi_promiscuous_pkt_type_t type)
 void app_main()
 {
 //	qRawWifiPkt = xQueueCreate(10, 2500);
-	xTaskCreate(vUartTask, "UartTask", 1024, NULL, 1, NULL);
+	xTaskCreate(vUartTask, "UartTask", 2048, NULL, 1, NULL);
 
 	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 	wifi_country_t wifi_country = {
@@ -141,7 +166,7 @@ void app_main()
 	nvs_flash_init();
 	tcpip_adapter_init();
 
-	qRawWifiPkt = xQueueCreate(5, sizeof(raw_802_11_t));
+	qRawWifiPkt = xQueueCreate(5, sizeof(wireshark_802_11_t));
 	if (qRawWifiPkt != NULL)
 	{
 		ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
