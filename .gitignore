@@ -5,3 +5,5 @@ firmware/.project
 firmware/main/.cproject
 firmware/main/.project
 firmware/main/.settings/
+.idea/*
+*.pcap
