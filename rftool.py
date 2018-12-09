@@ -20,7 +20,7 @@ PCAP_SNAPLEN        = 0xFFFF
 PCAP_NETWORK        = LINKTYPE_IEEE802_11
 # PCAP_NETWORK        = LINKTYPE_ETHERNET
 
-fin = open("esp32.pcap", "wb")
+fin = open("esp32new.pcap", "wb")
 
 fin.write(struct.pack('<I', PCAP_MAGICAL_NUMBER))
 fin.write(struct.pack('<H', PCAP_VERSION_MAJOR))
