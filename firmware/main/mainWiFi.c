@@ -19,7 +19,6 @@
 #include "esp_err.h"
 
 // Custom h-files
-//#include "wifi.h"
 #include "802_11.h"
 
 
@@ -67,7 +66,7 @@ void vUartTask(void *pvParameters)
 	ESP_ERROR_CHECK(uart_set_pin(UART_NUM_0, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 	ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 4096, 0, 0, NULL, 0));
 
-//	wireshark_802_11_t raw_wifi_pkt;
+
 	wifi2uart_t wifi_frame;
 	portBASE_TYPE xStatus;
 
@@ -77,8 +76,6 @@ void vUartTask(void *pvParameters)
 		xStatus = xQueueReceive(q_wifi_uart, &wifi_frame, portMAX_DELAY);
 		if (xStatus == pdPASS)
 		{
-//			printf("len MPDU = %d\n", wifi_frame.len_mpdu);
-//			printf("uart task\n\n" );
 			uint8_t *pkt;
 			uint16_t len_mac_hdr = 24;								// the length of MAC hdr, which include:
 																	//   2 bytes - FC
@@ -89,6 +86,7 @@ void vUartTask(void *pvParameters)
 																	//   2 bytes - SEQ CONTROL
 																	//	 6 bytes - MAC ADDR4 - optional
 																	//   2 bytes - QoS		 - optional
+
 			pkt = calloc(wifi_frame.len_mpdu, sizeof(uint8_t));
 
 			memcpy(pkt, &wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL, 2);
@@ -96,32 +94,36 @@ void vUartTask(void *pvParameters)
 			memcpy(pkt + 4, &wifi_frame.MPDU.MAC_HDR.MAC_ADDR1, 6);
 			memcpy(pkt + 10, &wifi_frame.MPDU.MAC_HDR.MAC_ADDR2, 6);
 			memcpy(pkt + 16, &wifi_frame.MPDU.MAC_HDR.MAC_ADDR3, 6);
-			memcpy(pkt + 2, &wifi_frame.MPDU.MAC_HDR.SEQUENCE_CTRL, 2);
+			memcpy(pkt + 22, &wifi_frame.MPDU.MAC_HDR.SEQUENCE_CTRL, 2);
 
 			// Check TO_DS and FROM_DS
+			// it TO_DS==1, FROM_DS==1, add MAC_ADDR4
 			if (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL & 0x300)
 			{
-				memcpy(pkt + 24, &wifi_frame.MPDU.MAC_HDR.MAC_ADDR4, 6);
+				printf("MAC_ADDR4, len_mac_hdr = %d\n", len_mac_hdr);
+				memcpy(pkt + len_mac_hdr, &wifi_frame.MPDU.MAC_HDR.MAC_ADDR4, 6);
 				len_mac_hdr += 6;
 			}
 
-			if (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL & 0x88)
+			// Check to QoS
+			if (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL & 0x8800)
 			{
-				memcpy(pkt + 30, &wifi_frame.MPDU.MAC_HDR.QOS_CTRL, 2);
+				memcpy(pkt + len_mac_hdr, &wifi_frame.MPDU.MAC_HDR.QOS_CTRL, 2);
 				len_mac_hdr += 2;
 			}
 
 			memcpy(pkt + len_mac_hdr, &wifi_frame.MPDU.payload, wifi_frame.len_mpdu - len_mac_hdr);
 
-//			printf("\nWill be send:\n");
-//			for (int i=0; i<45; i++)
-//			{
-//				printf("%X ", pkt[i]);
-//			}
+			printf("Will be send:\n");
+			for (int i=0; i<45; i++)
+			{
+				printf("%02X ", pkt[i]);
+			}
+			printf("\n\n");
 
 
-			uart_write_bytes(UART_NUM_0, (char*) pkt, wifi_frame.len_mpdu);
-			uart_write_bytes(UART_NUM_0, "\n", 1);
+//			uart_write_bytes(UART_NUM_0, (char*) pkt, wifi_frame.len_mpdu);
+//			uart_write_bytes(UART_NUM_0, "\n", 1);
 
 
 			free(pkt);
@@ -129,6 +131,7 @@ void vUartTask(void *pvParameters)
 
 //		uart_write_bytes(UART_NUM_0, "*** Ready!\r\n ***", 8);
 //		vTaskDelay(1000 / portTICK_PERIOD_MS);
+		esp_wifi_set_promiscuous(true);
 
 	}
 	vTaskDelete( NULL );
@@ -188,18 +191,27 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 //		ieee80211_mpdu_t wifi_frame;
 		wifi2uart_t wifi_frame;
 
-		wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL = (uint16_t) (capture_802_11->payload[1] << 8) || capture_802_11->payload[0];
-		wifi_frame.MPDU.MAC_HDR.DURATION_ID   = (uint16_t) (capture_802_11->payload[3] << 8) || capture_802_11->payload[2];
+//		wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL = ((uint16_t) capture_802_11->payload[0] << 8) || ((uint16_t) capture_802_11->payload[1]);
+		wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL = (uint16_t) capture_802_11->payload[1] << 8;
+		wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL |= (uint16_t) capture_802_11->payload[0];
+
+//		wifi_frame.MPDU.MAC_HDR.DURATION_ID   = (uint16_t) (capture_802_11->payload[3] << 8) || capture_802_11->payload[2];
+		wifi_frame.MPDU.MAC_HDR.DURATION_ID = (uint16_t) capture_802_11->payload[3] << 8;
+		wifi_frame.MPDU.MAC_HDR.DURATION_ID |= (uint16_t) capture_802_11->payload[2];
+
 		memcpy(wifi_frame.MPDU.MAC_HDR.MAC_ADDR1, &capture_802_11->payload[4], 6);
 		memcpy(wifi_frame.MPDU.MAC_HDR.MAC_ADDR2, &capture_802_11->payload[10], 6);
 		memcpy(wifi_frame.MPDU.MAC_HDR.MAC_ADDR3, &capture_802_11->payload[16], 6);
-		wifi_frame.MPDU.MAC_HDR.SEQUENCE_CTRL = (uint16_t) (capture_802_11->payload[23] << 8) || capture_802_11->payload[22];
+
+//		wifi_frame.MPDU.MAC_HDR.SEQUENCE_CTRL = (uint16_t) (capture_802_11->payload[23] << 8) || capture_802_11->payload[22];
+		wifi_frame.MPDU.MAC_HDR.SEQUENCE_CTRL = (uint16_t) capture_802_11->payload[23] << 8;
+		wifi_frame.MPDU.MAC_HDR.SEQUENCE_CTRL |= (uint16_t) capture_802_11->payload[22];
 
 		// Check TO_DS and FROM_DS bits
 		// in MAC_HDR -> Frame Control
 		if (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL & 0x300)
 		{
-			memcpy(wifi_frame.MPDU.MAC_HDR.MAC_ADDR3, &capture_802_11->payload[24], 6);
+			memcpy(wifi_frame.MPDU.MAC_HDR.MAC_ADDR4, &capture_802_11->payload[24], 6);
 			ptr_payload += 6;
 		}
 
@@ -207,10 +219,11 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 		// The 802.11-2007 standard
 		//    “The QoS Control field is present in all data frames
 		//     in which the QoS subfield of the Subtype field is set to 1.”
-		if (type == WIFI_PKT_DATA && (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL & 0x10) )
+		if (type == WIFI_PKT_DATA && (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL & 0x80) )
 		{
-			wifi_frame.MPDU.MAC_HDR.QOS_CTRL = (uint16_t) (capture_802_11->payload[ptr_payload + 1] << 8) ||
-													       capture_802_11->payload[ptr_payload];
+			printf("Current ptr_payload = %d\n", ptr_payload);
+			wifi_frame.MPDU.MAC_HDR.QOS_CTRL = (uint16_t) (capture_802_11->payload[ptr_payload + 1] << 8);
+			wifi_frame.MPDU.MAC_HDR.QOS_CTRL |= (uint16_t) (capture_802_11->payload[ptr_payload]);
 			ptr_payload += 2;
 		}
 
@@ -220,82 +233,17 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 
 		printf("\n");
 		printf("Captured pkt, len = %d: \n", capture_802_11->rx_ctrl.sig_len);
+//		printf("Frame Control %04X\n",wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL);
 		for (int i=0; i<45; i++)
 		{
-			printf("%X ", capture_802_11->payload[i]);
+			printf("%02X ", capture_802_11->payload[i]);
 		}
 
+		esp_wifi_set_promiscuous(false);
 
-
-//		xQueueSendFromISR(q_wifi_uart, &wifi_frame, NULL);
-
-
-//		memcpy(&wifi_frame.payload, capture_802_11->payload + ptr_payload, capture_802_11->rx_ctrl.sig_len - ptr_payload);
-//		memcpy(&wifi_frame.MAC_HDR, capture_802_11->payload, ptr_payload);
-
-
-
-//		printf("\n\n");
-//		printf("Sizeof of struct = %d\n", sizeof(wifi_frame));
-//		printf("%X    - FC\n", wifi_frame.MAC_HDR.FRAME_CONTROL);
-//		printf("%X    - Duration\n", wifi_frame.MAC_HDR.DURATION_ID);
-//		printf("%02X:%02X:%02X:%02X:%02X:%02X - MAC1\n", wifi_frame.MAC_HDR.MAC_ADDR1[0],
-//											 wifi_frame.MAC_HDR.MAC_ADDR1[1],
-//											 wifi_frame.MAC_HDR.MAC_ADDR1[2],
-//											 wifi_frame.MAC_HDR.MAC_ADDR1[3],
-//											 wifi_frame.MAC_HDR.MAC_ADDR1[4],
-//											 wifi_frame.MAC_HDR.MAC_ADDR1[5]);
-//
-//		printf("%02X:%02X:%02X:%02X:%02X:%02X - MAC2\n", wifi_frame.MAC_HDR.MAC_ADDR2[0],
-//											 wifi_frame.MAC_HDR.MAC_ADDR2[1],
-//											 wifi_frame.MAC_HDR.MAC_ADDR2[2],
-//											 wifi_frame.MAC_HDR.MAC_ADDR2[3],
-//											 wifi_frame.MAC_HDR.MAC_ADDR2[4],
-//											 wifi_frame.MAC_HDR.MAC_ADDR2[5]);
-//
-//		printf("%02X:%02X:%02X:%02X:%02X:%02X - MAC3\n", wifi_frame.MAC_HDR.MAC_ADDR3[0],
-//											 wifi_frame.MAC_HDR.MAC_ADDR3[1],
-//											 wifi_frame.MAC_HDR.MAC_ADDR3[2],
-//											 wifi_frame.MAC_HDR.MAC_ADDR3[3],
-//											 wifi_frame.MAC_HDR.MAC_ADDR3[4],
-//											 wifi_frame.MAC_HDR.MAC_ADDR3[5]);
-//
-//		printf("%X    - Seqeunce\n", wifi_frame.MAC_HDR.SEQUENCE_CTRL);
-//
-//		printf("%02X:%02X:%02X:%02X:%02X:%02X - MAC4\n", wifi_frame.MAC_HDR.MAC_ADDR4[0],
-//											 wifi_frame.MAC_HDR.MAC_ADDR4[1],
-//											 wifi_frame.MAC_HDR.MAC_ADDR4[2],
-//											 wifi_frame.MAC_HDR.MAC_ADDR4[3],
-//											 wifi_frame.MAC_HDR.MAC_ADDR4[4],
-//											 wifi_frame.MAC_HDR.MAC_ADDR4[5]);
-//
-//		printf("%X    - QoS\n", wifi_frame.MAC_HDR.QOS_CTRL);
-//
-//		printf("%02X %02X %02X %02X\n", wifi_frame.payload[0], wifi_frame.payload[1], wifi_frame.payload[2], wifi_frame.payload[3]);
-//		printf("********************************************\n");
+		xQueueSendFromISR(q_wifi_uart, &wifi_frame, NULL);
 
 	}
-
-//	wifi_promiscuous_pkt_t *capture_802_11 = (wifi_promiscuous_pkt_t *)buff;
-//
-//	if (type == WIFI_PKT_DATA )
-//	{
-//		printf("Data frame\n");
-//		printf("CTRL Frame %X : %X\n", capture_802_11->payload[0], capture_802_11->payload[1]);
-//	}
-//
-//	if (type == WIFI_PKT_MGMT)
-//	{
-//		printf("MGMT frame\n");
-//		printf("Ctrl Frame %X : %X\n", capture_802_11->payload[0], capture_802_11->payload[1]);
-//	}
-//
-//	if (type == WIFI_PKT_MISC)
-//	{
-//		printf("MISC frame\n");
-//		printf("Frame %X : %X\n", capture_802_11->payload[0], capture_802_11->payload[1]);
-//	}
-
 
 }
 
