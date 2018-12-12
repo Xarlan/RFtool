@@ -36,12 +36,13 @@ typedef struct {
 				 //mac_hdr_frame_ctrl_t 		FRAME_CONTROL;
 				 uint16_t				FRAME_CONTROL;
 				 uint16_t				DURATION_ID;
-				 uint8_t 				MAC_ADDR1[6]; /* receiver address */
-				 uint8_t 				MAC_ADDR2[6]; /* sender address */
-				 uint8_t 				MAC_ADDR3[6]; /* filtering address */
+				 uint8_t 				MAC_ADDR1[6]; 	/* receiver address */
+				 uint8_t 				MAC_ADDR2[6]; 	/* sender address */
+				 uint8_t 				MAC_ADDR3[6]; 	/* filtering address */
 				 uint16_t				SEQUENCE_CTRL;
-				 uint8_t 				MAC_ADDR4[6]; /* optional */
-				 uint16_t				QOS_CTRL;	  /* optional */
+				 uint8_t 				MAC_ADDR4[6]; 	/* optional */
+				 uint16_t				QOS_CTRL;	  	/* optional, used only in QoS Data frames */
+				 uint32_t				HT_CTRL;		/* optional, this field add on 802.11n frame */
 				} ieee80211_mac_hdr_t;
 
 
@@ -56,7 +57,8 @@ typedef struct {
 
 typedef struct {
 				ieee80211_mpdu_t		MPDU;
-				uint16_t				len_mpdu;
+//				uint16_t				len_mpdu;
+				wifi_pkt_rx_ctrl_t		ESP32_RADIO_METADATA;
 				} wifi2uart_t;
 
 /*
