@@ -33,8 +33,8 @@ typedef struct {
  * 	   	MAC Header 						*
  ****************************************/
 typedef struct {
-				 //mac_hdr_frame_ctrl_t 		FRAME_CONTROL;
-				 uint16_t				FRAME_CONTROL;
+				 mac_hdr_frame_ctrl_t 		FRAME_CONTROL;
+//				 uint16_t				FRAME_CONTROL;
 				 uint16_t				DURATION_ID;
 				 uint8_t 				MAC_ADDR1[6]; 	/* receiver address */
 				 uint8_t 				MAC_ADDR2[6]; 	/* sender address */
@@ -57,7 +57,6 @@ typedef struct {
 
 typedef struct {
 				ieee80211_mpdu_t		MPDU;
-//				uint16_t				len_mpdu;
 				wifi_pkt_rx_ctrl_t		ESP32_RADIO_METADATA;
 				} wifi2uart_t;
 
