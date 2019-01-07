@@ -14,6 +14,7 @@
 
 #include "nvs_flash.h"
 #include "esp_event_loop.h"
+#include "esp_event.h"
 
 // Error library
 #include "esp_err.h"
@@ -23,7 +24,7 @@
 #include "sniffer.h"
 
 
-#define ENABLE_AGREGATION		1				// 0 capture 802.11 and immediately send via uart
+#define ENABLE_AGREGATION		0				// 0 capture 802.11 and immediately send via uart
 												// 1 capture 802.11 frame and analyze it
 
 /*
@@ -143,7 +144,7 @@ void vUartWiFi(void *pvParameters)
 		if (xStatus == errQUEUE_EMPTY)
 		{
 			esp_wifi_set_promiscuous(true);
-			printf("\n\n\nQueue is empty\nPromiscuous mode enable\n");
+//			printf("\n\n\nQueue is empty\nPromiscuous mode enable\n");
 		}
 
 //		if (xStatus == errQUEUE_FULL)
@@ -153,6 +154,8 @@ void vUartWiFi(void *pvParameters)
 //		}
 
 
+//	printf("uart task\n");
+//	printf("*****\n\n");
 	}
 	vTaskDelete( NULL );
 
@@ -299,7 +302,7 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 	if (xStatus == errQUEUE_FULL)
 	{
 		esp_wifi_set_promiscuous(false);
-		printf("\n\n\n\nQueue is full\nPromiscuous mode stop\n");
+//		printf("\n\n\n\nQueue is full\nPromiscuous mode stop\n");
 	}
 
 #else
@@ -407,6 +410,10 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 void app_main()
 {
 
+//	printf("**********\n");
+//	printf("WiFi sniffer v.01\n");
+//	printf("**********\n");
+
 	init_uart();
 	init_wifi();
 
@@ -421,6 +428,15 @@ void app_main()
 //		xTaskCreate(vUartTask, "UartTask", 8192, NULL, 1, NULL);
 		xTaskCreatePinnedToCore(vUartWiFi, "UartWiFi", 8192, NULL, 1, NULL, 1);
 //		xTaskCreatePinnedToCore(vUartEventSettings, "UartSettings", 2048, NULL, 12, NULL, 1);
+
+	   wifi_promiscuous_filter_t filter = {
+//			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL
+			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_DATA
+//										   .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT
+//										   .filter_mask = WIFI_PROMIS_FILTER_MASK_CTRL
+//										   .filter_mask = WIFI_PROMIS_FILTER_MASK_MISC
+										  };
+		ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&filter));
 
 		esp_wifi_set_promiscuous(true);
 
