@@ -25,7 +25,7 @@ typedef struct {
 				 unsigned PWR_MGMT			: 1;
 				 unsigned MORE_DATA			: 1;
 				 unsigned PROT_FRAME		: 1;
-				 unsigned OTHER				: 1;
+				 unsigned ORDER				: 1;
 				} mac_hdr_frame_ctrl_t;
 
 

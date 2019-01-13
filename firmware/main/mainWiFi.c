@@ -19,12 +19,16 @@
 // Error library
 #include "esp_err.h"
 
+//// WDT
+//#include "soc/timer_group_struct.h"
+//#include "soc/timer_group_reg.h"
+
 // Custom h-files
 #include "802_11.h"
 #include "sniffer.h"
 
 
-#define ENABLE_AGREGATION		0				// 0 capture 802.11 and immediately send via uart
+#define ENABLE_AGREGATION		1				// 0 capture 802.11 and immediately send via uart
 												// 1 capture 802.11 frame and analyze it
 
 /*
@@ -32,11 +36,14 @@
  */
 #define UART_2_PC				UART_NUM_0
 #define UART_2_PC_BAUD_RATE		115200
+//#define UART_2_PC_BAUD_RATE		921600
 #define UART_BUFF_RX			128				// size in bytes, receive settings from PC
 #define UART_BUFF_TX			2048			// size in bytes, send 802.11 packet to PC
 #define UART_CMD_QUEUE			5
+#define CMD_TLV_BUFFER			10				// size of buffer where will be stored settings from PC
+												// it used TLV format - Type-Length-Value
 
-#define WIFI_CHANNEL			7
+#define WIFI_CHANNEL			5
 
 
 static xQueueHandle q_wifi_uart;
@@ -55,73 +62,108 @@ static QueueHandle_t uart0_queue;
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
-    switch (event->event_id) {
-        case SYSTEM_EVENT_STA_START:
-        	printf("**** 1 ******\n");
-            break;
-
-        case SYSTEM_EVENT_STA_GOT_IP:
-        	printf("**** 2 ******\n");
-            break;
-
-        case SYSTEM_EVENT_STA_DISCONNECTED:
-        	printf("**** 3 ******\n");
-            break;
-
-        default:
-            break;
-    }
+//    switch (event->event_id) {
+//        case SYSTEM_EVENT_STA_START:
+//        	printf("**** 1 ******\n");
+//            break;
+//
+//        case SYSTEM_EVENT_STA_GOT_IP:
+//        	printf("**** 2 ******\n");
+//            break;
+//
+//        case SYSTEM_EVENT_STA_DISCONNECTED:
+//        	printf("**** 3 ******\n");
+//            break;
+//
+//        default:
+//            break;
+//    }
     return ESP_OK;
 }
 
 
 /******************************************************************************
 * 																			  *
+* receive settings from PC via uart, used EVENT								  *
+*******************************************************************************/
+//static void vUartEventSettings(void *pvParameters)
+//{
+//    uart_event_t event;
+//    size_t buffered_size;
+//    uint8_t* dtmp = (uint8_t*) malloc(RD_BUF_SIZE);
+//
+//    while ( 1 )
+//    {
+//        //Waiting for UART event.
+//        if( xQueueReceive(uart0_queue, (void * )&event, (portTickType)portMAX_DELAY) )
+//        {
+//            bzero(dtmp, RD_BUF_SIZE);
+////            ESP_LOGI(TAG, "uart[%d] event:", EX_UART_NUM);
+//            switch(event.type)
+//            {
+//                //Event of UART receving data
+//                /*We'd better handler data event fast, there would be much more data events than
+//                other types of events. If we take too much time on data event, the queue might
+//                be full.*/
+//                case UART_DATA:
+////                    ESP_LOGI(TAG, "[UART DATA]: %d", event.size);
+//                    uart_read_bytes(EX_UART_NUM, dtmp, event.size, portMAX_DELAY);
+//                    printf("UART Rx form PC: %s\n", dtmp);
+//                    esp_wifi_set_promiscuous(false);
+//
+////                    ESP_LOGI(TAG, "[DATA EVT]:");
+//                    uart_write_bytes(EX_UART_NUM, (const char*) dtmp, event.size);
+//                    break;
+//
+//                default:
+////                    ESP_LOGI(TAG, "uart event type: %d", event.type);
+//                    break;
+//            }
+//        }
+//    }
+//    free(dtmp);
+//    dtmp = NULL;
+//    vTaskDelete(NULL);
+//}
+
+/******************************************************************************
+* 						UART function										  *
 * receive settings from PC via uart											  *
 *******************************************************************************/
-static void vUartEventSettings(void *pvParameters)
+void vUartSettings(void *pvParameters)
 {
-    uart_event_t event;
-    size_t buffered_size;
-    uint8_t* dtmp = (uint8_t*) malloc(RD_BUF_SIZE);
 
-    while ( 1 )
-    {
-        //Waiting for UART event.
-        if( xQueueReceive(uart0_queue, (void * )&event, (portTickType)portMAX_DELAY) )
-        {
-            bzero(dtmp, RD_BUF_SIZE);
-//            ESP_LOGI(TAG, "uart[%d] event:", EX_UART_NUM);
-            switch(event.type)
-            {
-                //Event of UART receving data
-                /*We'd better handler data event fast, there would be much more data events than
-                other types of events. If we take too much time on data event, the queue might
-                be full.*/
-                case UART_DATA:
-//                    ESP_LOGI(TAG, "[UART DATA]: %d", event.size);
-                    uart_read_bytes(EX_UART_NUM, dtmp, event.size, portMAX_DELAY);
-                    printf("UART Rx form PC: %s\n", dtmp);
-                    esp_wifi_set_promiscuous(false);
+	uint8_t tlv_cmd[CMD_TLV_BUFFER];
+//	tlv_cmd_t tlv_cmd;
+	size_t len_tlv_cmd;
+	int rx_bytes;
+	uint8_t current_wifi_channel;
 
-//                    ESP_LOGI(TAG, "[DATA EVT]:");
-                    uart_write_bytes(EX_UART_NUM, (const char*) dtmp, event.size);
-                    break;
+	while(1)
+	{
+		uart_get_buffered_data_len(UART_2_PC, &len_tlv_cmd);
+		rx_bytes = uart_read_bytes(UART_2_PC, tlv_cmd, len_tlv_cmd, 1000/portTICK_RATE_MS);
+		if (rx_bytes > 0)
+		{
+			switch(tlv_cmd[0])
+			{
+				case 1:
+					printf("start/stop sniffer\n");
+					break;
 
-                default:
-//                    ESP_LOGI(TAG, "uart event type: %d", event.type);
-                    break;
-            }
-        }
-    }
-    free(dtmp);
-    dtmp = NULL;
-    vTaskDelete(NULL);
+				case 2:
+					ESP_ERROR_CHECK(esp_wifi_get_channel(&current_wifi_channel, WIFI_SECOND_CHAN_NONE));
+					printf("Current channel - %d\n", current_wifi_channel);
+			}
+		}
+	}
+
+	vTaskDelete(NULL);
 }
 
 /******************************************************************************
 * 						UART function										  *
-* receive raw 802.11 frame and send it via uart								  *
+* get raw 802.11 frame from queue and send it via uart						  *
 *******************************************************************************/
 void vUartWiFi(void *pvParameters)
 {
@@ -137,14 +179,20 @@ void vUartWiFi(void *pvParameters)
 		xStatus = xQueueReceive(q_wifi_uart, &wifi_frame, 0);
 		if (xStatus == pdPASS)
 		{
-			uart_write_bytes(UART_NUM_0, (char*) wifi_frame.pkt, wifi_frame.len_pkt);
-			uart_write_bytes(UART_NUM_0, "\n", 1);
+
+			for(int i=0; i<wifi_frame.len_pkt; i++)
+			{
+				printf("%02X ", wifi_frame.pkt[i]);
+			}
+			printf("\n\n");
+
+//			uart_write_bytes(UART_NUM_0, (char*) wifi_frame.pkt, wifi_frame.len_pkt);
+//			uart_write_bytes(UART_NUM_0, "\n", 1);
 		}
 
 		if (xStatus == errQUEUE_EMPTY)
 		{
 			esp_wifi_set_promiscuous(true);
-//			printf("\n\n\nQueue is empty\nPromiscuous mode enable\n");
 		}
 
 //		if (xStatus == errQUEUE_FULL)
@@ -153,9 +201,6 @@ void vUartWiFi(void *pvParameters)
 //			printf("\n\n\nQueue is Full\nPromiscuous mode enable\n");
 //		}
 
-
-//	printf("uart task\n");
-//	printf("*****\n\n");
 	}
 	vTaskDelete( NULL );
 
@@ -167,7 +212,8 @@ void vUartWiFi(void *pvParameters)
 
 	while( 1 )
 	{
-		xStatus = xQueueReceive(q_wifi_uart, &wifi_frame, portMAX_DELAY);
+//		xStatus = xQueueReceive(q_wifi_uart, &wifi_frame, portMAX_DELAY);
+		xStatus = xQueueReceive(q_wifi_uart, &wifi_frame, 0);
 		if (xStatus == pdPASS)
 		{
 			uint8_t *pkt;
@@ -180,6 +226,7 @@ void vUartWiFi(void *pvParameters)
 																	//   2 bytes - SEQ CONTROL
 																	//	 6 bytes - MAC ADDR4 - optional
 																	//   2 bytes - QoS		 - optional
+																	//	 4 bytes - HT CTRL   - optional
 
 			pkt = calloc(wifi_frame.ESP32_RADIO_METADATA.sig_len, sizeof(uint8_t));
 
@@ -215,7 +262,24 @@ void vUartWiFi(void *pvParameters)
 					len_mac_hdr += 2;
 				}
 
+				/*
+				 * Check HT CTRL
+				 */
+				if (wifi_frame.ESP32_RADIO_METADATA.sig_mode == 1)
+				{
+					memcpy(pkt + len_mac_hdr, &wifi_frame.MPDU.MAC_HDR.HT_CTRL, 4);
+					len_mac_hdr += 4;
+				}
+
 				memcpy(pkt + len_mac_hdr, &wifi_frame.MPDU.payload, wifi_frame.ESP32_RADIO_METADATA.sig_len - len_mac_hdr);
+
+//				printf("****\nWi-Fi -> UART:\n");
+//				printf("DS = %d   FROM_DS = %d\n", wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL.TO_DS, wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL.FROM_DS);
+//				for(int i=0; i<wifi_frame.ESP32_RADIO_METADATA.sig_len; i++)
+//				{
+//					printf("%02X ", pkt[i]);
+//				}
+
 
 //				if (wifi_frame.ESP32_RADIO_METADATA.aggregation)
 //				{
@@ -228,36 +292,45 @@ void vUartWiFi(void *pvParameters)
 //					printf("\n*****************\n\n\n\n");
 //				}
 
-					for(int j=0; j<6; j++)
-					{
-						printf("%02X:", wifi_frame.MPDU.MAC_HDR.MAC_ADDR1[j]);
-					}
-					printf("\n");
+//					for(int j=0; j<6; j++)
+//					{
+//						printf("%02X:", wifi_frame.MPDU.MAC_HDR.MAC_ADDR1[j]);
+//					}
+//					printf("\n");
+//
+//					for(int j=0; j<6; j++)
+//					{
+//						printf("%02X:", wifi_frame.MPDU.MAC_HDR.MAC_ADDR2[j]);
+//					}
+//					printf("\n");
+//
+//					for(int j=0; j<6; j++)
+//					{
+//						printf("%02X:", wifi_frame.MPDU.MAC_HDR.MAC_ADDR3[j]);
+//					}
+//					printf("\n");
 
-					for(int j=0; j<6; j++)
-					{
-						printf("%02X:", wifi_frame.MPDU.MAC_HDR.MAC_ADDR2[j]);
-					}
-					printf("\n");
-
-					for(int j=0; j<6; j++)
-					{
-						printf("%02X:", wifi_frame.MPDU.MAC_HDR.MAC_ADDR3[j]);
-					}
-					printf("\n");
-
+//				uint16_t len_802_11 = 0;
+//				len_802_11 = (uint16_t) wifi_frame.ESP32_RADIO_METADATA.sig_len;
+//				printf("len 802.11 = %d\n", len_802_11);
+//				uart_write_bytes(UART_NUM_0, &len_802_11, 2);
 
 //				uart_write_bytes(UART_NUM_0, (char*) pkt, wifi_frame.ESP32_RADIO_METADATA.sig_len);
 //				uart_write_bytes(UART_NUM_0, "\n", 1);
 
 
 				free(pkt);
-			}
+			} 										// end of if (pkt != NULL)
+		}											// end of if (xStatus == pdPASS)
+
+		if (xStatus == errQUEUE_EMPTY)
+		{
+			esp_wifi_set_promiscuous(true);
 		}
 
 //		uart_write_bytes(UART_NUM_0, "*** Ready!\r\n ***", 8);
 //		vTaskDelay(1000 / portTICK_PERIOD_MS);
-		esp_wifi_set_promiscuous(true);
+//		esp_wifi_set_promiscuous(true);
 
 	}
 	vTaskDelete( NULL );
@@ -306,6 +379,7 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 	}
 
 #else
+	portBASE_TYPE xStatus;
 	wifi_promiscuous_pkt_t *capture_802_11 = (wifi_promiscuous_pkt_t *)buff;
 
 	if ( capture_802_11->rx_ctrl.rx_state == 0)										// state of the packet.
@@ -346,10 +420,9 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 		wifi_frame.MPDU.MAC_HDR.SEQUENCE_CTRL = (uint16_t) capture_802_11->payload[23] << 8;
 		wifi_frame.MPDU.MAC_HDR.SEQUENCE_CTRL |= (uint16_t) capture_802_11->payload[22];
 
-		// Check TO_DS and FROM_DS bits
-		// in MAC_HDR -> Frame Control
-//		printf("FROM_DS - %d\n", wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL.FROM_DS);
-//		printf("TO_DS   - %d\n", wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL.TO_DS);
+		/*
+		 * Check TO_DS and FROM_DS bits in MAC_HDR -> Frame Control
+		 */
 		if (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL.FROM_DS & wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL.TO_DS)
 //		if (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL & 0x300)
 		{
@@ -357,47 +430,67 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 			ptr_payload += 6;
 		}
 
-		/* Check QoS in Data Frame
-		   The 802.11-2007 standard
-		   “The QoS Control field is present in all data frames
-		   in which the QoS subfield of the Subtype field is set to 1.”
+		/*
+		 * Check QoS in Data Frame
+		 * The 802.11-2007 standard
+		 * “The QoS Control field is present in all data frames
+		 * in which the QoS subfield of the Subtype field is set to 1.”
+		 *
+		 * IEEE 802.11-2012
+		 * 8.2.4.5.1 QoS Control field structure
 		*/
-//		printf("SUBTYPE  - %02X\n", wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL.SUBTYPE);
 		if (type == WIFI_PKT_DATA && (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL.SUBTYPE & 0x80) )
 //		if (type == WIFI_PKT_DATA && (wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL & 0x80) )
 		{
-//			printf("Current ptr_payload = %d\n", ptr_payload);
 			wifi_frame.MPDU.MAC_HDR.QOS_CTRL = (uint16_t) (capture_802_11->payload[ptr_payload + 1] << 8);
 			wifi_frame.MPDU.MAC_HDR.QOS_CTRL |= (uint16_t) (capture_802_11->payload[ptr_payload]);
 			ptr_payload += 2;
 		}
 
+		/*
+		 * Check HT Control Field
+		 * IEEE 802.11-2012
+		 * 8.2.4.6 HT Control field
+		 */
+		if (capture_802_11->rx_ctrl.sig_mode == 1)
+		{
+			wifi_frame.MPDU.MAC_HDR.HT_CTRL = (uint32_t) (capture_802_11->payload[ptr_payload + 3] << 24);
+			wifi_frame.MPDU.MAC_HDR.HT_CTRL |= (uint32_t) (capture_802_11->payload[ptr_payload + 2] << 16);
+			wifi_frame.MPDU.MAC_HDR.HT_CTRL |= (uint32_t) (capture_802_11->payload[ptr_payload + 1] << 8);
+			wifi_frame.MPDU.MAC_HDR.HT_CTRL |= (uint32_t) (capture_802_11->payload[ptr_payload]);
+			ptr_payload += 4;
+		}
+
 		memcpy(wifi_frame.MPDU.payload, &capture_802_11->payload[ptr_payload], capture_802_11->rx_ctrl.sig_len - ptr_payload);
 
-//		wifi_frame.len_mpdu = capture_802_11->rx_ctrl.sig_len;
 		memcpy(&wifi_frame.ESP32_RADIO_METADATA, &capture_802_11->rx_ctrl, sizeof(wifi_pkt_rx_ctrl_t));
 
 //		printf("\n");
 //		printf("Captured pkt, len = %d: \n", capture_802_11->rx_ctrl.sig_len);
-////		printf("Frame Control %04X\n",wifi_frame.MPDU.MAC_HDR.FRAME_CONTROL);
-//		for (int i=0; i<45; i++)
+//		for (int i=0; i<capture_802_11->rx_ctrl.sig_len; i++)
 //		{
 //			printf("%02X ", capture_802_11->payload[i]);
 //		}
-//		printf("wifi len pkt %d\n", wifi_frame.ESP32_RADIO_METADATA.sig_len);
 
 //		printf("\n\nRadio metadata header:\n");
 //		printf("Type pkt    %d\n", type);
 //		printf("Sig mode    %d\n", capture_802_11->rx_ctrl.sig_mode);
-//		printf("Aggregation %d\n", capture_802_11->rx_ctrl.aggregation);
+//		printf("\nAggregation %d\n", capture_802_11->rx_ctrl.aggregation);
 //		printf("Fec coding  %d\n", capture_802_11->rx_ctrl.fec_coding);
 //		printf("AMPDU cnt   %d\n", capture_802_11->rx_ctrl.ampdu_cnt);
 //		printf("Channel     %d\n", capture_802_11->rx_ctrl.channel);
 
 
-		esp_wifi_set_promiscuous(false);
+//		esp_wifi_set_promiscuous(false);
 
-		xQueueSendFromISR(q_wifi_uart, &wifi_frame, NULL);
+		xStatus = xQueueSendFromISR(q_wifi_uart, &wifi_frame, 0);
+
+//		xStatus = xQueueSendFromISR(q_wifi_uart, &wifi_frame, 0);
+
+		if (xStatus == errQUEUE_FULL)
+		{
+			esp_wifi_set_promiscuous(false);
+		}
 
 	}
 #endif
@@ -410,9 +503,9 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 void app_main()
 {
 
-//	printf("**********\n");
-//	printf("WiFi sniffer v.01\n");
-//	printf("**********\n");
+//	TIMERG0.wdt_wprotect=TIMG_WDT_WKEY_VALUE;
+//	TIMERG0.wdt_feed=1;
+//	TIMERG0.wdt_wprotect=0;
 
 	init_uart();
 	init_wifi();
@@ -428,6 +521,9 @@ void app_main()
 //		xTaskCreate(vUartTask, "UartTask", 8192, NULL, 1, NULL);
 		xTaskCreatePinnedToCore(vUartWiFi, "UartWiFi", 8192, NULL, 1, NULL, 1);
 //		xTaskCreatePinnedToCore(vUartEventSettings, "UartSettings", 2048, NULL, 12, NULL, 1);
+
+		xTaskCreatePinnedToCore(vUartSettings, "UartSettings", 2048, NULL, 12, NULL, 1);
+
 
 	   wifi_promiscuous_filter_t filter = {
 //			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL
