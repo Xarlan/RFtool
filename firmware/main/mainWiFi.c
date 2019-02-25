@@ -35,8 +35,8 @@
  * What components are used
  */
 #define UART_2_PC				UART_NUM_0
-#define UART_2_PC_BAUD_RATE		115200
-//#define UART_2_PC_BAUD_RATE		921600
+//#define UART_2_PC_BAUD_RATE		115200
+#define UART_2_PC_BAUD_RATE		921600
 #define UART_BUFF_RX			128				// size in bytes, receive settings from PC
 #define UART_BUFF_TX			2048			// size in bytes, send 802.11 packet to PC
 #define UART_CMD_QUEUE			5
@@ -133,36 +133,36 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
 * 						UART function										  *
 * receive settings from PC via uart											  *
 *******************************************************************************/
-//void vUartSettings(void *pvParameters)
-//{
-//
-//	uint8_t tlv_cmd[CMD_TLV_BUFFER];
-////	tlv_cmd_t tlv_cmd;
-//	size_t len_tlv_cmd;
-//	int rx_bytes;
-//	uint8_t current_wifi_channel;
-//
-//	while(1)
-//	{
-//		uart_get_buffered_data_len(UART_2_PC, &len_tlv_cmd);
-//		rx_bytes = uart_read_bytes(UART_2_PC, tlv_cmd, len_tlv_cmd, 1000/portTICK_RATE_MS);
-//		if (rx_bytes > 0)
-//		{
-//			switch(tlv_cmd[0])
-//			{
-//				case 1:
-//					printf("start/stop sniffer\n");
-//					break;
-//
-//				case 2:
-//					ESP_ERROR_CHECK(esp_wifi_get_channel(&current_wifi_channel, WIFI_SECOND_CHAN_NONE));
-//					printf("Current channel - %d\n", current_wifi_channel);
-//			}
-//		}
-//	}
-//
-//	vTaskDelete(NULL);
-//}
+void vUartSettings(void *pvParameters)
+{
+
+	uint8_t tlv_cmd[CMD_TLV_BUFFER];
+//	tlv_cmd_t tlv_cmd;
+	size_t len_tlv_cmd;
+	int rx_bytes;
+	uint8_t current_wifi_channel;
+
+	while(1)
+	{
+		uart_get_buffered_data_len(UART_2_PC, &len_tlv_cmd);
+		rx_bytes = uart_read_bytes(UART_2_PC, tlv_cmd, len_tlv_cmd, 1000/portTICK_RATE_MS);
+		if (rx_bytes > 0)
+		{
+			switch(tlv_cmd[0])
+			{
+				case 1:
+					printf("start/stop sniffer\n");
+					break;
+
+				case 2:
+					ESP_ERROR_CHECK(esp_wifi_get_channel(&current_wifi_channel, WIFI_SECOND_CHAN_NONE));
+					printf("Current channel - %d\n", current_wifi_channel);
+			}
+		}
+	}
+
+	vTaskDelete(NULL);
+}
 
 /******************************************************************************
 * 						UART function										  *
@@ -212,12 +212,10 @@ void vUartWiFi(void *pvParameters)
 	wifi2uart_t wifi_frame;
 	portBASE_TYPE xStatus;
 
-//	char *BEGIN802_11= "<<<80211BEGIN>>>";
-//	char END802_11[] = "<<<80211END>>>";
+	const char * WIFI_PKT_LABEL = "<<<WiFi>>>";
+	const char * RF_DELIMITER 	= "<<<RfPkt>>>";
 
-	const char * FRAME_802_11 = "<<<80211FRAME>>>";
-//	const uint8_t LEN_DELIMITER;
-	printf("%d - len of delemiter <<<80211FRAME>>>\n", strlen(FRAME_802_11));
+	uart_write_bytes(UART_2_PC, RF_DELIMITER, 11);
 
 	while( 1 )
 	{
@@ -299,36 +297,19 @@ void vUartWiFi(void *pvParameters)
 //					printf("\n*****************\n\n\n\n");
 //				}
 
-//					for(int j=0; j<6; j++)
-//					{
-//						printf("%02X:", wifi_frame.MPDU.MAC_HDR.MAC_ADDR1[j]);
-//					}
-//					printf("\n");
-//
-//					for(int j=0; j<6; j++)
-//					{
-//						printf("%02X:", wifi_frame.MPDU.MAC_HDR.MAC_ADDR2[j]);
-//					}
-//					printf("\n");
-//
-//					for(int j=0; j<6; j++)
-//					{
-//						printf("%02X:", wifi_frame.MPDU.MAC_HDR.MAC_ADDR3[j]);
-//					}
-//					printf("\n");
-
 				uint16_t len_802_11 = 0;
 				uint32_t timestamp_esp32 = 0;
 
 				len_802_11 = (uint16_t) wifi_frame.ESP32_RADIO_METADATA.sig_len;
 				timestamp_esp32 = (uint32_t) wifi_frame.ESP32_RADIO_METADATA.timestamp;
 
-				uart_write_bytes(UART_2_PC, FRAME_802_11, 16);
-				uart_write_bytes(UART_2_PC, (char *)&len_802_11, 2);
+				uart_write_bytes(UART_2_PC, WIFI_PKT_LABEL, 10);
+
+				uart_write_bytes(UART_2_PC, (char *) &len_802_11, 2);
 				uart_write_bytes(UART_2_PC, (char *) &timestamp_esp32, 4);
 				uart_write_bytes(UART_2_PC, (char*) pkt, wifi_frame.ESP32_RADIO_METADATA.sig_len);
 
-//				uart_write_bytes(UART_NUM_0, "\n", 1);
+				uart_write_bytes(UART_2_PC, RF_DELIMITER, 11);
 
 
 				free(pkt);
@@ -339,10 +320,6 @@ void vUartWiFi(void *pvParameters)
 		{
 			esp_wifi_set_promiscuous(true);
 		}
-
-//		uart_write_bytes(UART_NUM_0, "*** Ready!\r\n ***", 8);
-//		vTaskDelay(1000 / portTICK_PERIOD_MS);
-//		esp_wifi_set_promiscuous(true);
 
 	}
 	vTaskDelete( NULL );
@@ -487,10 +464,6 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 void app_main()
 {
 
-//	TIMERG0.wdt_wprotect=TIMG_WDT_WKEY_VALUE;
-//	TIMERG0.wdt_feed=1;
-//	TIMERG0.wdt_wprotect=0;
-
 	init_uart();
 	init_wifi();
 
@@ -507,13 +480,13 @@ void app_main()
 		xTaskCreatePinnedToCore(vUartWiFi, "UartWiFi", 8192, NULL, 1, NULL, 1);
 //		xTaskCreatePinnedToCore(vUartEventSettings, "UartSettings", 2048, NULL, 12, NULL, 1);
 
-//		xTaskCreatePinnedToCore(vUartSettings, "UartSettings", 2048, NULL, 12, NULL, 1);
+		xTaskCreatePinnedToCore(vUartSettings, "UartSettings", 2048, NULL, 12, NULL, 1);
 
 
 	   wifi_promiscuous_filter_t filter = {
-//			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL
+			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL
 //			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_DATA
-										   .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT
+//										   .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT
 //										   .filter_mask = WIFI_PROMIS_FILTER_MASK_CTRL
 //										   .filter_mask = WIFI_PROMIS_FILTER_MASK_MISC
 										  };
@@ -557,18 +530,13 @@ void init_uart(void)
 
 	ESP_ERROR_CHECK(uart_set_pin(UART_2_PC, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-	ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 4096, 0, 0, NULL, 0));
+	ESP_ERROR_CHECK(uart_driver_install(UART_2_PC, 4096, 0, 0, NULL, 0));
 
 //	ESP_ERROR_CHECK(uart_driver_install(UART_2_PC, UART_BUFF_RX, UART_BUFF_TX, UART_CMD_QUEUE, &q_cmd, 0));
-
 //	ESP_ERROR_CHECK(uart_driver_install(UART_2_PC, UART_BUFF_RX, UART_BUFF_TX, 0, NULL, 0));
-
 //	ESP_ERROR_CHECK(uart_driver_install(UART_2_PC, 64, 64, 0, NULL, 0));
-
 //	ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 4096, 0, 0, NULL, 0));
 
-//	uart_driver_install(EX_UART_NUM, BUF_SIZE * 2, BUF_SIZE * 2, 20, &uart0_queue, 0);
-//	xTaskCreate(uart_event_task, "uart_event_task", 2048, NULL, 12, NULL);
 }
 
 
@@ -603,6 +571,4 @@ void init_wifi(void)
 	ESP_ERROR_CHECK(esp_wifi_set_channel(WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE));
 
 	ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(&sniffer_wifi));
-
-	//		esp_wifi_set_promiscuous(true);
 }
