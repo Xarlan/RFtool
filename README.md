@@ -18,7 +18,5 @@ Based on ESP32
 * 802.11 error frame, such as the frame with a CRC error, etc
 
 ## How to use
-Run
-$python3.5 rftool.py
-The result will be store in esp32.pcap file.
-Open this file in wireshark
+file 'rx_80211.py' - receive raw stream from esp32 via uart. Save 802.11 packet to *.pcap file
+file 'tx_settings.py' - test functionality to send settings from PC to esp32
