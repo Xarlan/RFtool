@@ -47,8 +47,8 @@
 
 
 static xQueueHandle q_wifi_uart;
-static xQueueHandle q_cmd;						// hwnd of queue, which used to receive cmd from PC
-static QueueHandle_t uart0_queue;
+//static xQueueHandle q_cmd;						// hwnd of queue, which used to receive cmd from PC
+//static QueueHandle_t uart0_queue;
 
 
 
@@ -138,25 +138,41 @@ void vUartSettings(void *pvParameters)
 
 	uint8_t tlv_cmd[CMD_TLV_BUFFER];
 //	tlv_cmd_t tlv_cmd;
-	size_t len_tlv_cmd;
+	size_t len_tlv_cmd =0;
 	int rx_bytes;
 	uint8_t current_wifi_channel;
 
 	while(1)
 	{
-		uart_get_buffered_data_len(UART_2_PC, &len_tlv_cmd);
-		rx_bytes = uart_read_bytes(UART_2_PC, tlv_cmd, len_tlv_cmd, 1000/portTICK_RATE_MS);
-		if (rx_bytes > 0)
-		{
-			switch(tlv_cmd[0])
-			{
-				case 1:
-					printf("start/stop sniffer\n");
-					break;
+//		printf("\n*******\n");
+//		printf("rx task to rx settings\n");
+//		printf("\n*******\n");
 
-				case 2:
-					ESP_ERROR_CHECK(esp_wifi_get_channel(&current_wifi_channel, WIFI_SECOND_CHAN_NONE));
-					printf("Current channel - %d\n", current_wifi_channel);
+
+		uart_get_buffered_data_len(UART_2_PC, &len_tlv_cmd);
+//		printf("\n*******\n");
+//		printf("Rx bytes = %d\n", len_tlv_cmd);
+//		printf("*******\n");
+//		vTaskDelay(1000/ portTICK_PERIOD_MS);
+//		rx_bytes = uart_read_bytes(UART_2_PC, tlv_cmd, len_tlv_cmd, 1000/portTICK_RATE_MS);
+		if (len_tlv_cmd > 0)
+		{
+			rx_bytes = uart_read_bytes(UART_2_PC, tlv_cmd, len_tlv_cmd, 10000/portTICK_RATE_MS);
+			if (rx_bytes > 0)
+			{
+				switch(tlv_cmd[0])
+				{
+					case 1:
+						printf("start/stop sniffer\n");
+						esp_wifi_set_promiscuous(true);
+						break;
+
+	//				case 2:
+	//					ESP_ERROR_CHECK(esp_wifi_get_channel(&current_wifi_channel, WIFI_SECOND_CHAN_NONE));
+	//					printf("Current channel - %d\n", current_wifi_channel);
+					default:
+						printf("\n*******\nUnknown cmd\n*****\n");
+				}
 			}
 		}
 	}
@@ -463,7 +479,7 @@ void sniffer_wifi(void *buff, wifi_promiscuous_pkt_type_t type)
 *******************************************************************************/
 void app_main()
 {
-
+	BaseType_t xReturned;
 	init_uart();
 	init_wifi();
 
@@ -475,13 +491,25 @@ void app_main()
 
 	if (q_wifi_uart != NULL)
 	{
-		printf("queue is created\n");
-//		xTaskCreate(vUartTask, "UartTask", 8192, NULL, 1, NULL);
-		xTaskCreatePinnedToCore(vUartWiFi, "UartWiFi", 8192, NULL, 1, NULL, 1);
-//		xTaskCreatePinnedToCore(vUartEventSettings, "UartSettings", 2048, NULL, 12, NULL, 1);
 
-		xTaskCreatePinnedToCore(vUartSettings, "UartSettings", 2048, NULL, 12, NULL, 1);
+		xReturned = xTaskCreatePinnedToCore(vUartWiFi, "UartWiFi", 8192, NULL, 1, NULL, 1);
+		if (xReturned != pdPASS)
+		{
+			printf("Can't create UartWifi task\n");
+			printf("ESP32 will be reset after 3 sec\n");
+			vTaskDelay(3000/ portTICK_PERIOD_MS);
+			esp_restart();
+		}
 
+
+		xReturned = xTaskCreatePinnedToCore(vUartSettings, "UartSettings", 4096, NULL, 12, NULL, 1);
+		if (xReturned != pdPASS)
+		{
+			printf("Can't create UartSettings task\n");
+			printf("ESP32 will be reset after 3 sec\n");
+			vTaskDelay(3000/ portTICK_PERIOD_MS);
+			esp_restart();
+		}
 
 	   wifi_promiscuous_filter_t filter = {
 			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL
@@ -530,7 +558,8 @@ void init_uart(void)
 
 	ESP_ERROR_CHECK(uart_set_pin(UART_2_PC, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
-	ESP_ERROR_CHECK(uart_driver_install(UART_2_PC, 4096, 0, 0, NULL, 0));
+//	ESP_ERROR_CHECK(uart_driver_install(UART_2_PC, 4096, 0, 0, NULL, 0));
+	ESP_ERROR_CHECK(uart_driver_install(UART_2_PC, 4096, 4096, 0, NULL, 0));
 
 //	ESP_ERROR_CHECK(uart_driver_install(UART_2_PC, UART_BUFF_RX, UART_BUFF_TX, UART_CMD_QUEUE, &q_cmd, 0));
 //	ESP_ERROR_CHECK(uart_driver_install(UART_2_PC, UART_BUFF_RX, UART_BUFF_TX, 0, NULL, 0));
