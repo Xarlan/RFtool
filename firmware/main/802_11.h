@@ -34,15 +34,14 @@ typedef struct {
  ****************************************/
 typedef struct {
 				 mac_hdr_frame_ctrl_t 		FRAME_CONTROL;
-//				 uint16_t				FRAME_CONTROL;
-				 uint16_t				DURATION_ID;
-				 uint8_t 				MAC_ADDR1[6]; 	/* receiver address */
-				 uint8_t 				MAC_ADDR2[6]; 	/* sender address */
-				 uint8_t 				MAC_ADDR3[6]; 	/* filtering address */
-				 uint16_t				SEQUENCE_CTRL;
-				 uint8_t 				MAC_ADDR4[6]; 	/* optional */
-				 uint16_t				QOS_CTRL;	  	/* optional, used only in QoS Data frames */
-				 uint32_t				HT_CTRL;		/* optional, this field add on 802.11n frame */
+				 uint16_t					DURATION_ID;
+				 uint8_t 					MAC_ADDR1[6]; 	/* receiver address */
+				 uint8_t 					MAC_ADDR2[6]; 	/* sender address */
+				 uint8_t 					MAC_ADDR3[6]; 	/* filtering address */
+				 uint16_t					SEQUENCE_CTRL;
+				 uint8_t 					MAC_ADDR4[6]; 	/* optional */
+				 uint16_t					QOS_CTRL;	  	/* optional, used only in QoS Data frames */
+				 uint32_t					HT_CTRL;		/* optional, this field add on 802.11n frame */
 				} ieee80211_mac_hdr_t;
 
 
@@ -55,10 +54,17 @@ typedef struct {
 				} ieee80211_mpdu_t;
 
 
+/*********************************************************
+ * 	   	Parcel struct									 *
+ *it is as universal struct to send data to vUartTx task *
+ *********************************************************/
 typedef struct {
-				ieee80211_mpdu_t		MPDU;
+				uint8_t					flag;
 				wifi_pkt_rx_ctrl_t		ESP32_RADIO_METADATA;
-				} wifi2uart_t;
+				ieee80211_mpdu_t		MPDU;
+				} parcel_tx_t;
+
+
 
 /*
 https://networkengineering.stackexchange.com/questions/32970/what-is-the-802-11-mtu
@@ -72,5 +78,11 @@ typedef struct {
 					uint16_t	len_pkt;
 					uint8_t		pkt[ESP32_HARDWARE_RX_BUFFER_BYTE];
 				} wireshark_802_11_t;
+
+
+typedef struct {
+				wifi_pkt_rx_ctrl_t		ESP32_RADIO_METADATA;
+				ieee80211_mpdu_t		MPDU;
+				} catch_80211_t;
 
 #endif /* MAIN_802_11_H_ */

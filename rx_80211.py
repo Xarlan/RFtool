@@ -11,7 +11,7 @@ DEFAULT_TTY_ESP32_BAUDRATE = 921600
 LINKTYPE_ETHERNET   = 0x1
 LINKTYPE_IEEE802_11 = 0x69      # http://www.tcpdump.org/linktypes.html
 
-ESP32_PCAP_FILE = "wifi_ALL_2.pcap"
+ESP32_PCAP_FILE = "wifi_ALL_4.pcap"
 
 # Global header of *.pcap file
 PCAP_MAGICAL_NUMBER = 0xA1B2C3D4
@@ -43,20 +43,21 @@ index = 0
 
 # raw_data = ""
 
-FRAME_DELIMITER = "<<<RfPkt>>>"
-RX_WIFI_PKT = "<<<WiFi>>>"
+DATA_DELIMITER = "<<<PARCEL>>>"
+FLAG_WIFI_PKT = "<<<WiFi>>>"
 raw_stream = ""
 
 
 def check_rx_pkt(raw_pkt):
     try:
-        raw_pkt.index(RX_WIFI_PKT)
+        index_id = raw_pkt.index(FLAG_WIFI_PKT)
 
     except ValueError:
         print("not wifi pkt")
+        print(raw_pkt)
 
     else:
-        raw_pkt = raw_pkt[len(RX_WIFI_PKT):0 - len(FRAME_DELIMITER)]
+        raw_pkt = raw_pkt[index_id + len(FLAG_WIFI_PKT):0 - len(DATA_DELIMITER)]
         raw_pkt = struct.unpack('%dB' % len(raw_pkt), raw_pkt)
         len_raw_pkt = raw_pkt[0] | (raw_pkt[1] << 8)
         t_msec_esp32 = raw_pkt[2] | (raw_pkt[3] << 8) | (raw_pkt[4] << 16) | (raw_pkt[5] << 24)     # get timestamp
@@ -69,24 +70,26 @@ def check_rx_pkt(raw_pkt):
             return rx_802_11
 
 
-while index < 300:
-    raw_frame = ser.read_until(terminator=FRAME_DELIMITER)
-    print("RX from serial: ", raw_frame)
+while index < 5000:
+    raw_frame = ser.read_until(terminator=DATA_DELIMITER)
+    # print("RX from serial: ", raw_frame)
 
     frame_802_11 = check_rx_pkt(raw_frame)
 
-    # pkt PCAP header
-    fin.write(struct.pack('<I', frame_802_11['time'] / 1000000))
-    fin.write(struct.pack('<I', frame_802_11['time']))
+    if frame_802_11:
 
-    fin.write(struct.pack('<I', frame_802_11['len']))
-    fin.write(struct.pack('<I', frame_802_11['len']))
+        # pkt PCAP header
+        fin.write(struct.pack('<I', frame_802_11['time'] / 1000000))
+        fin.write(struct.pack('<I', frame_802_11['time']))
 
-    fin.write(struct.pack('%dB' % frame_802_11['len'], *frame_802_11['frame']))
+        fin.write(struct.pack('<I', frame_802_11['len']))
+        fin.write(struct.pack('<I', frame_802_11['len']))
 
-    print(frame_802_11)
+        fin.write(struct.pack('%dB' % frame_802_11['len'], *frame_802_11['frame']))
 
-    print("\n")
+    # print(frame_802_11)
+
+    # print("\n")
     index +=1
 
 
