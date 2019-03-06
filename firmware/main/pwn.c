@@ -58,6 +58,14 @@
 static xQueueHandle qUartTx;					// this Queue used to receive data from any xTask
 												// it used in vUartTx
 
+// ID PARCEL for vUartTx
+#define ID_PARCEL_WIFI			0x1
+
+// ID for command Rx
+#define ID_CMD_TYPE				0x0
+#define ID_CMD_LENGTH			0x1
+#define ID_CMD_VALUE			0x2
+
 
 
 #define UART_BUFF_RX			128				// size in bytes, receive settings from PC
@@ -92,12 +100,12 @@ void vUartRx(void *pvParameters)
 {
 
 	uint8_t tlv_cmd[CMD_TLV_BUFFER];
-//	tlv_cmd_t tlv_cmd;
-	size_t len_tlv_cmd =0;
+	size_t len_tlv_cmd = 0;
 	int rx_bytes;
+	parcel_tx_t	parcel;
 
 	uint8_t primary_wifi_channel;
-	wifi_second_chan_t second_wifi_channel;
+	wifi_second_chan_t second_wifi_channel = WIFI_SECOND_CHAN_NONE;
 	wifi_promiscuous_filter_t current_filter_pkt;
 
 
@@ -113,24 +121,62 @@ void vUartRx(void *pvParameters)
 
 			if (rx_bytes > 0)
 			{
-				switch(tlv_cmd[0])
+				switch(tlv_cmd[ID_CMD_TYPE])
 				{
+					/*
+					 * Enable/Disable promiscuous mode
+					 */
 					case 1:
-						printf("start/stop sniffer\n");
+						/*
+						 * Check correct length received cmd
+						 */
+						if ( tlv_cmd[ID_CMD_LENGTH] == 1)
+						{
+
+							switch(tlv_cmd[ID_CMD_VALUE])
+							{
+								case 0x0:
+									esp_wifi_set_promiscuous(false);
+									break;
+
+								case 0x1:
 #if ENABLE_PROMISC
-						esp_wifi_set_promiscuous(true);
+									esp_wifi_set_promiscuous(true);
 #endif
+									break;
+
+								default:
+									esp_wifi_set_promiscuous(false);
+							} /* switch(tlv_cmd[2]) */
+						}
 						break;
 
+					/*
+					 * Request Settings
+					 */
 					case 2:
 						ESP_ERROR_CHECK(esp_wifi_get_channel(&primary_wifi_channel, &second_wifi_channel));
 						printf("Current channel - %d\n", primary_wifi_channel);
-						break;
 
-					case 3:
 						ESP_ERROR_CHECK(esp_wifi_get_promiscuous_filter(&current_filter_pkt));
 						printf("Current filter %X\n", current_filter_pkt.filter_mask);
 						break;
+
+					/*
+					 * Set channel
+					 */
+					case 3:
+						if ( tlv_cmd[ID_CMD_LENGTH] == 1)
+						{
+							if ( (tlv_cmd[2] >=1 ) & (tlv_cmd[2] <= 14) )
+							{
+								ESP_ERROR_CHECK(esp_wifi_set_channel(tlv_cmd[2], second_wifi_channel));
+							}
+						}
+						break;
+//						ESP_ERROR_CHECK(esp_wifi_get_promiscuous_filter(&current_filter_pkt));
+//						printf("Current filter %X\n", current_filter_pkt.filter_mask);
+//						break;
 
 					default:
 						printf("\n*******\nUnknown cmd\n*****\n");
@@ -164,11 +210,11 @@ void vUartTx(void *pvParameters)
 	uint32_t timestamp_esp32 = 0;
 	uint8_t *pkt;
 
-//	uart_write_bytes(ESP32_UART_PC, DATA_DELIMITER, 12);	// 12 - strlen("<<<PARCEL>>>")
+	uart_write_bytes(ESP32_UART_PC, DATA_DELIMITER, 12);	// 12 - strlen("<<<PARCEL>>>")
 															// this transfer is using that on PC side
 															// correct capture and analyze data from ESP32
 
-//	printf("\n...  Task vUartTx is running\n");
+
 	while (1)
 	{
 		xStatus = xQueueReceive(qUartTx, &parcel, 0);
@@ -180,10 +226,10 @@ void vUartTx(void *pvParameters)
 				/*
 				 * The parcel receive from cb_promiscuos_80211 function
 				 */
-				case 0x1:
-					if ( parcel.ESP32_RADIO_METADATA.aggregation == 0 &&
-						 parcel.MPDU.MAC_HDR.FRAME_CONTROL.MORE_FRAG == 0)
-					{
+				case ID_PARCEL_WIFI:
+//					if ( parcel.ESP32_RADIO_METADATA.aggregation == 0 &&
+//						 parcel.MPDU.MAC_HDR.FRAME_CONTROL.MORE_FRAG == 0)
+//					{
 						pkt = calloc(parcel.ESP32_RADIO_METADATA.sig_len, sizeof(uint8_t));
 
 						if (pkt != NULL)
@@ -209,14 +255,14 @@ void vUartTx(void *pvParameters)
 						} /* if (pkt != NULL) */
 
 						free(pkt);
-					} /* conditional of compleate frame */
-					else
-					{
-						char * ampdu_frame = "not complete frame";
-						uart_write_bytes(ESP32_UART_PC, FLAG_ERROR, 10);
-						uart_write_bytes(ESP32_UART_PC, ampdu_frame, strlen(ampdu_frame));
-						uart_write_bytes(ESP32_UART_PC, DATA_DELIMITER, 12);
-					}
+//					} /* conditional of compleate frame */
+//					else
+//					{
+//						char * ampdu_frame = "not complete frame";
+//						uart_write_bytes(ESP32_UART_PC, FLAG_ERROR, 10);
+//						uart_write_bytes(ESP32_UART_PC, ampdu_frame, strlen(ampdu_frame));
+//						uart_write_bytes(ESP32_UART_PC, DATA_DELIMITER, 12);
+//					}
 
 
 			} /* switch (parcel.flag) */
@@ -268,7 +314,7 @@ void cb_promiscuous_80211(void *buff, wifi_promiscuous_pkt_type_t type)
 		frame_control =  (uint16_t) capture_802_11->payload[0];
 		frame_control |= (uint16_t) capture_802_11->payload[1] << 8;
 
-		raw_802_11.flag = 0x1;				// 0x1 - self ID that this parcel send from cb_promiscuous_80211
+		raw_802_11.flag = ID_PARCEL_WIFI;				// 0x1 - self ID that this parcel send from cb_promiscuous_80211
 
 		memcpy(&raw_802_11.MPDU.MAC_HDR.FRAME_CONTROL, &frame_control, 2);
 
