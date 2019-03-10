@@ -60,6 +60,7 @@ static xQueueHandle qUartTx;					// this Queue used to receive data from any xTa
 
 // ID PARCEL for vUartTx
 #define ID_PARCEL_WIFI			0x1
+#define ID_PARCEL_GET_SETTINGS	0x2
 
 // ID for command Rx
 #define ID_CMD_TYPE				0x0
@@ -107,6 +108,7 @@ void vUartRx(void *pvParameters)
 	uint8_t primary_wifi_channel;
 	wifi_second_chan_t second_wifi_channel = WIFI_SECOND_CHAN_NONE;
 	wifi_promiscuous_filter_t current_filter_pkt;
+	portBASE_TYPE xStatus;
 
 
 	while(1)
@@ -123,9 +125,9 @@ void vUartRx(void *pvParameters)
 			{
 				switch(tlv_cmd[ID_CMD_TYPE])
 				{
-					/*
-					 * Enable/Disable promiscuous mode
-					 */
+	/***********************************
+	 * Enable/Disable promiscuous mode *
+	 **********************************/
 					case 1:
 						/*
 						 * Check correct length received cmd
@@ -149,40 +151,70 @@ void vUartRx(void *pvParameters)
 									esp_wifi_set_promiscuous(false);
 							} /* switch(tlv_cmd[2]) */
 						}
-						break;
+						break; /* for case 1 */
 
-					/*
-					 * Request Settings
-					 */
+	/********************
+	 * Request Settings *
+	 *******************/
 					case 2:
-						ESP_ERROR_CHECK(esp_wifi_get_channel(&primary_wifi_channel, &second_wifi_channel));
-						printf("Current channel - %d\n", primary_wifi_channel);
+						/*
+						 * Check correct length received cmd
+						 */
+						if ( tlv_cmd[ID_CMD_LENGTH] == 1)
+						{
+							switch(tlv_cmd[ID_CMD_VALUE])
+							{
+								/*
+								 * Request Wi-Fi channel
+								 */
+								case 0x0:
+									ESP_ERROR_CHECK(esp_wifi_get_channel(&primary_wifi_channel, &second_wifi_channel));
+									parcel.flag = ID_PARCEL_GET_SETTINGS;
+									parcel.MPDU.payload[0] = 0x0;
+									parcel.MPDU.payload[1] = primary_wifi_channel;
+									parcel.ESP32_RADIO_METADATA.sig_len = 2;
+									xStatus = xQueueSendFromISR(qUartTx, &parcel, 0);
+									break;
 
-						ESP_ERROR_CHECK(esp_wifi_get_promiscuous_filter(&current_filter_pkt));
-						printf("Current filter %X\n", current_filter_pkt.filter_mask);
-						break;
+								case 0x1:
+									ESP_ERROR_CHECK(esp_wifi_get_promiscuous_filter(&current_filter_pkt));
+									parcel.flag = ID_PARCEL_GET_SETTINGS;
+									parcel.MPDU.payload[0] = 0x1;
+									parcel.MPDU.payload[1] = (uint8_t)(current_filter_pkt.filter_mask & 0xFF000000) >> 24;
+									parcel.MPDU.payload[2] = (uint8_t)(current_filter_pkt.filter_mask & 0xFF0000) >> 16;
+									parcel.MPDU.payload[3] = (uint8_t)(current_filter_pkt.filter_mask & 0xFF00) >> 8;
+									parcel.MPDU.payload[4] = (uint8_t)(current_filter_pkt.filter_mask & 0xFF);
+									parcel.ESP32_RADIO_METADATA.sig_len = 5;
 
-					/*
-					 * Set channel
-					 */
+									printf("Current filter %X\n", current_filter_pkt.filter_mask);
+									xStatus = xQueueSendFromISR(qUartTx, &parcel, 0);
+
+								default:
+									break;
+							} /* switch(tlv_cmd[ID_CMD_VALUE]) for case 2 */
+						} /* if ( tlv_cmd[ID_CMD_LENGTH] == 1) for case 2*/
+						break; /* for case 2 */
+
+	/*********************
+	 * Set Wi-Fi channel *
+	 ********************/
 					case 3:
 						if ( tlv_cmd[ID_CMD_LENGTH] == 1)
 						{
-							if ( (tlv_cmd[2] >=1 ) & (tlv_cmd[2] <= 14) )
+							if ( (tlv_cmd[2] >=1 ) & (tlv_cmd[2] < 14) )
 							{
 								ESP_ERROR_CHECK(esp_wifi_set_channel(tlv_cmd[2], second_wifi_channel));
 							}
 						}
 						break;
-//						ESP_ERROR_CHECK(esp_wifi_get_promiscuous_filter(&current_filter_pkt));
-//						printf("Current filter %X\n", current_filter_pkt.filter_mask);
-//						break;
 
 					default:
 						printf("\n*******\nUnknown cmd\n*****\n");
 				}
-			}
-		}
+
+			} 		/* if (rx_bytes > 0) */
+
+		} 			/* if (len_tlv_cmd > 0) */
 	}
 
 	vTaskDelete(NULL);
@@ -201,9 +233,10 @@ void vUartTx(void *pvParameters)
 
 	hwnd_task_UartRx = (TaskHandle_t *) pvParameters;
 
-	const char * DATA_DELIMITER 	= "<<<PARCEL>>>";
-	const char * FLAG_WIFI_PKT 		= "<<<WiFi>>>";
-	const char * FLAG_ERROR			= "<<<Errr>>>";
+	const char * DATA_DELIMITER		 	= "<<<PARCEL>>>";
+	const char * FLAG_WIFI_PKT	 		= "<<<WiFi>>>";
+	const char * FLAG_REQ_SETTINGS		= "<<<RSTG>>>";
+//	const char * FLAG_ERROR			= "<<<Errr>>>";
 
 	parcel_tx_t	parcel;
 	uint16_t len_802_11 = 0;
@@ -256,13 +289,17 @@ void vUartTx(void *pvParameters)
 
 						free(pkt);
 //					} /* conditional of compleate frame */
-//					else
-//					{
-//						char * ampdu_frame = "not complete frame";
-//						uart_write_bytes(ESP32_UART_PC, FLAG_ERROR, 10);
-//						uart_write_bytes(ESP32_UART_PC, ampdu_frame, strlen(ampdu_frame));
-//						uart_write_bytes(ESP32_UART_PC, DATA_DELIMITER, 12);
-//					}
+						break;
+
+				case ID_PARCEL_GET_SETTINGS:
+					uart_write_bytes(ESP32_UART_PC, FLAG_REQ_SETTINGS, 10);
+
+					uart_write_bytes(ESP32_UART_PC, (char *) parcel.MPDU.payload, parcel.ESP32_RADIO_METADATA.sig_len);
+
+					uart_write_bytes(ESP32_UART_PC, DATA_DELIMITER, 12);
+
+					break;
+
 
 
 			} /* switch (parcel.flag) */
