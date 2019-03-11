@@ -38,7 +38,7 @@
 #define ENABLE_AGREGATION		1				// 0 capture 802.11 and immediately send via uart
 												// 1 capture 802.11 frame and analyze it
 
-#define ENABLE_PROMISC			0
+#define ENABLE_PROMISC			1
 
 /*
  * What components are used
@@ -62,11 +62,17 @@ static xQueueHandle qUartTx;					// this Queue used to receive data from any xTa
 #define ID_PARCEL_WIFI			0x1
 #define ID_PARCEL_GET_SETTINGS	0x2
 
-// ID for command Rx
-#define ID_CMD_TYPE				0x0
-#define ID_CMD_LENGTH			0x1
-#define ID_CMD_VALUE			0x2
+// id for position in buffer TLV
+// [Type][Length][Value]
+#define TLV_TYPE				0x0
+#define TLV_LENGTH				0x1
+#define TLV_VALUE				0x2
 
+//id for cmd from PC
+#define ID_CMD_ENABNLE_PROMISC	0x1
+#define	ID_CMD_GET				0x2
+#define	ID_CMD_SET_CHANNEL		0x3
+#define ID_CMD_SET_FILTER		0x4
 
 
 #define UART_BUFF_RX			128				// size in bytes, receive settings from PC
@@ -123,19 +129,19 @@ void vUartRx(void *pvParameters)
 
 			if (rx_bytes > 0)
 			{
-				switch(tlv_cmd[ID_CMD_TYPE])
+				switch(tlv_cmd[TLV_TYPE])
 				{
 	/***********************************
 	 * Enable/Disable promiscuous mode *
 	 **********************************/
-					case 1:
+					case ID_CMD_ENABNLE_PROMISC:
 						/*
 						 * Check correct length received cmd
 						 */
-						if ( tlv_cmd[ID_CMD_LENGTH] == 1)
+						if ( tlv_cmd[TLV_LENGTH] == 1)
 						{
 
-							switch(tlv_cmd[ID_CMD_VALUE])
+							switch(tlv_cmd[TLV_VALUE])
 							{
 								case 0x0:
 									esp_wifi_set_promiscuous(false);
@@ -156,13 +162,13 @@ void vUartRx(void *pvParameters)
 	/********************
 	 * Request Settings *
 	 *******************/
-					case 2:
+					case ID_CMD_GET:
 						/*
 						 * Check correct length received cmd
 						 */
-						if ( tlv_cmd[ID_CMD_LENGTH] == 1)
+						if ( tlv_cmd[TLV_LENGTH] == 1)
 						{
-							switch(tlv_cmd[ID_CMD_VALUE])
+							switch(tlv_cmd[TLV_VALUE])
 							{
 								/*
 								 * Request Wi-Fi channel
@@ -175,7 +181,9 @@ void vUartRx(void *pvParameters)
 									parcel.ESP32_RADIO_METADATA.sig_len = 2;
 									xStatus = xQueueSendFromISR(qUartTx, &parcel, 0);
 									break;
-
+								/*
+								* Request filter of pkt
+								*/
 								case 0x1:
 									ESP_ERROR_CHECK(esp_wifi_get_promiscuous_filter(&current_filter_pkt));
 									parcel.flag = ID_PARCEL_GET_SETTINGS;
@@ -191,20 +199,52 @@ void vUartRx(void *pvParameters)
 
 								default:
 									break;
-							} /* switch(tlv_cmd[ID_CMD_VALUE]) for case 2 */
-						} /* if ( tlv_cmd[ID_CMD_LENGTH] == 1) for case 2*/
+							} /* switch(tlv_cmd[TLV_VALUE]) for case 2 */
+						} /* if ( tlv_cmd[TLV_LENGTH] == 1) for case 2*/
 						break; /* for case 2 */
 
 	/*********************
 	 * Set Wi-Fi channel *
 	 ********************/
-					case 3:
-						if ( tlv_cmd[ID_CMD_LENGTH] == 1)
+					case ID_CMD_SET_CHANNEL:
+						if ( tlv_cmd[TLV_LENGTH] == 1)
 						{
 							if ( (tlv_cmd[2] >=1 ) & (tlv_cmd[2] < 14) )
 							{
 								ESP_ERROR_CHECK(esp_wifi_set_channel(tlv_cmd[2], second_wifi_channel));
 							}
+						}
+						break;
+
+	/*********************
+	 * Set Wi-Fi channel *
+	 ********************/
+					case ID_CMD_SET_FILTER:
+						if ( tlv_cmd[TLV_LENGTH] == 1)
+						{
+							switch(tlv_cmd[TLV_VALUE])
+							{
+								case 0:
+									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT;
+									break;
+
+								case 1:
+									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_CTRL;
+									break;
+
+								case 2:
+									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
+									break;
+
+								case 3:
+									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_ALL;
+									break;
+
+								default:
+									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
+									break;
+							}
+							ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&current_filter_pkt));
 						}
 						break;
 
@@ -415,14 +455,14 @@ void app_main()
 	}
 
 
-	   wifi_promiscuous_filter_t filter = {
-//			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL
-			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_DATA
-//										   .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT
-//										   .filter_mask = WIFI_PROMIS_FILTER_MASK_CTRL
-//										   .filter_mask = WIFI_PROMIS_FILTER_MASK_MISC
-										  };
-		ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&filter));
+//	   wifi_promiscuous_filter_t filter = {
+////			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_ALL
+//			   	   	   	   	   	   	   	   .filter_mask = WIFI_PROMIS_FILTER_MASK_DATA
+////										   .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT
+////										   .filter_mask = WIFI_PROMIS_FILTER_MASK_CTRL
+////										   .filter_mask = WIFI_PROMIS_FILTER_MASK_MISC
+//										  };
+//		ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&filter));
 
 //		esp_wifi_set_promiscuous(true);
 

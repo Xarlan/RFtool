@@ -116,8 +116,11 @@ class Esp32(object):
 
             raw_frame = self.ser.read_until(terminator=DATA_DELIMITER)
 
+            print(raw_frame)
+
             if raw_frame:
-                frame = self._check_rx_parcel(raw_frame.decode())
+                frame = self._check_rx_parcel(raw_frame.decode(encoding="ISO-8859-1"))
+                # frame = self._check_rx_parcel(raw_frame)
 
                 if frame[0] == 0:
                     print("Current channel : {}".format(frame[1]))
@@ -134,13 +137,27 @@ class Esp32(object):
 
             index += 1
 
-        click.secho('An unknown property was requested', bg='blue', fg='white')
+        click.secho("ESP32 doesn't responding. Try reconnect the ESP32", bg='blue', fg='white')
 
     def set_settings(self, type_settings, value):
         if type_settings == 'channel':
             self.ser.write(struct.pack('3B', 0x3, 0x1, value))
         elif type_settings == 'pkt_type':
-            pass
+            if value == 'MGMT':
+                self.ser.write(b'\x04\x01\x00')
+
+            elif value == 'CTRL':
+                self.ser.write(b'\x04\x01\x01')
+
+            elif value == 'DATA':
+                self.ser.write(b'\x04\x01\x02')
+
+            elif value == 'ALL':
+                self.ser.write(b'\x04\x01\x03')
+
+            else:
+                click.secho("At this moment this type of filter {} doesn't support".format(value), bg='blue', fg='white')
+
 
 
 
@@ -255,7 +272,8 @@ def set(tty, bd, channel, pkt_type):
               type=click.INT,
               help="How many packets to capture")
 def run(tty, bd, channel, pkt_type, pcap, n):
-    pass
+    esp32 = Esp32(tty, int(bd))
+    passcd
 
 
 # @click.command()
