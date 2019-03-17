@@ -4,6 +4,7 @@ import serial
 import struct
 import datetime
 import click
+# import bate
 # import logging
 
 
@@ -25,12 +26,9 @@ PCAP_NETWORK        = LINKTYPE_IEEE802_11
 
 
 DATA_DELIMITER      = "<<<PARCEL>>>"
-FLAG_WIFI_PKT       = "<<<WiFi>>"
+FLAG_WIFI_PKT       = "<<<WiFi>>>"
 FLAG_REQ_SETTINGS   = "<<<RSTG>>>"
 
-# ESP32_SETTINGS = {
-#                     0: "Current Wi-Fi channel",
-#                     1: "Current MASK"}
 
 PROMISCUOUS_FILTER = {
                         1: "MGMT frame",
@@ -47,7 +45,6 @@ class Esp32(object):
 
         except serial.SerialException as e:
             self.ser = None
-            # click.echo(click.style(e.strerror, bg='blue', fg='white'))
             click.secho('e.strerror', bg='blue', fg='white')
             exit(1)
 
@@ -56,41 +53,64 @@ class Esp32(object):
 
     def __del__(self):
         if self.ser:
+            self.ser.write(b'\x01\x01\x00')
             self.ser.close()
+            print("Close connection to serial port")
 
-    def _check_rx_parcel(self, raw_pkt):
+    @staticmethod
+    def _analyze_rx_parcel(raw_pkt, type_parcel):
 
-        for parcel in self.id_parcel:
+        data_from_esp32 = []
+        while True:
 
             try:
-                index_id = raw_pkt.index(parcel)
+                parcel_begin = raw_pkt.index(type_parcel.encode())
 
             except ValueError:
-                pass
-                # print("Unknown parcel")
-                # print(raw_pkt)
+                return data_from_esp32
+                # break
 
             else:
-                raw_pkt = raw_pkt[index_id + len(parcel):0 - len(DATA_DELIMITER)]
-                raw_pkt = struct.unpack('%dB' % len(raw_pkt), raw_pkt.encode())
 
-                if parcel == FLAG_WIFI_PKT:
-                    pass
+                try:
+                    parcel_end = raw_pkt.index(DATA_DELIMITER.encode())
 
-                elif parcel == FLAG_REQ_SETTINGS:
-                    # settings = {ESP32_SETTINGS[raw_pkt[0]] : raw_pkt[1]}
-                    # return settings
-                    return raw_pkt
+                except ValueError:
+                    return data_from_esp32
+                    # break
 
-                # len_raw_pkt = raw_pkt[0] | (raw_pkt[1] << 8)
-                # t_msec_esp32 = raw_pkt[2] | (raw_pkt[3] << 8) | (raw_pkt[4] << 16) | (raw_pkt[5] << 24)  # get timestamp
-                # # from ESP32
-                #
-                # if len_raw_pkt == len(raw_pkt[6:]):
-                #     rx_802_11 = {'len': len_raw_pkt,
-                #                  'time': t_msec_esp32,
-                #                  'frame': raw_pkt[6:]}
-                #     return rx_802_11
+                else:
+                    rx_parcel = raw_pkt[parcel_begin + len(type_parcel): parcel_end]
+
+                    raw_pkt = raw_pkt[parcel_end + len(DATA_DELIMITER):]
+
+                    if type_parcel == FLAG_WIFI_PKT:
+                        len_802_11 = rx_parcel[0] | (rx_parcel[1] << 8)
+                        t_msec_esp32 = rx_parcel[2] | (rx_parcel[3] << 8) | \
+                                       (rx_parcel[4] << 16) | (rx_parcel[5] << 24)  # get timestamp from ESP32
+
+                        temp_val = len(rx_parcel[6:])
+
+                        if len_802_11 == len(rx_parcel[6:]):
+                            rx_802_11 = {'len': len_802_11,
+                                         'time': t_msec_esp32,
+                                         'frame': rx_parcel[6:]}
+
+                            data_from_esp32.append(rx_802_11)
+
+                            if len(raw_pkt) == 0:
+                                # return rx_802_11
+                                return data_from_esp32
+
+                    elif type_parcel == FLAG_REQ_SETTINGS:
+                        return raw_pkt
+
+                # raw_pkt = raw_pkt[parcel_begin + len(type_parcel):]
+
+                # parcel_end = raw_pkt.index(DATA_DELIMITER.encode())
+
+            # raw_pkt = raw_pkt[:parcel_end]
+
 
     def get_settings(self, name=None):
         """
@@ -112,30 +132,33 @@ class Esp32(object):
         index = 0
         self.ser.timeout = 0.1
 
-        while index < 4:
+        while index < 10:
 
             raw_frame = self.ser.read_until(terminator=DATA_DELIMITER)
 
-            print(raw_frame)
-
             if raw_frame:
-                frame = self._check_rx_parcel(raw_frame.decode(encoding="ISO-8859-1"))
-                # frame = self._check_rx_parcel(raw_frame)
+                try:
+                    frame = self._analyze_rx_parcel(raw_frame, FLAG_REQ_SETTINGS)
 
-                if frame[0] == 0:
-                    print("Current channel : {}".format(frame[1]))
-                    exit(0)
+                except ValueError:
+                    pass
 
-                elif frame[0] == 1:
-                    mask = (frame[1] << 24) | (frame[2] << 16) | (frame[3] << 8) | frame[4]
-                    try:
-                        print("ESP32 receive next frame : {}".format(PROMISCUOUS_FILTER[mask]))
+                else:
+                    if frame[0] == 0:
+                        print("Current channel : {}".format(frame[1]))
+                        exit(0)
 
-                    except KeyError:
-                        click.secho('Unknown filter mask - {:X}'.format(mask), fg='yellow')
-                    exit(0)
+                    elif frame[0] == 1:
+                        mask = (frame[1] << 24) | (frame[2] << 16) | (frame[3] << 8) | frame[4]
+                        try:
+                            print("ESP32 receive next frame : {}".format(PROMISCUOUS_FILTER[mask]))
+
+                        except KeyError:
+                            click.secho('Unknown filter mask - {:X}'.format(mask), fg='yellow')
+                        exit(0)
 
             index += 1
+
 
         click.secho("ESP32 doesn't responding. Try reconnect the ESP32", bg='blue', fg='white')
 
@@ -157,6 +180,59 @@ class Esp32(object):
 
             else:
                 click.secho("At this moment this type of filter {} doesn't support".format(value), bg='blue', fg='white')
+
+    def sniff_wifi(self, user_pcap, total_pkt):
+
+        self.ser.write(b'\x01\x01\x01')
+
+        pcap_file = user_pcap.split('.')
+
+        pcap_file = pcap_file[0] + ".pcap"
+
+        fin = open(pcap_file, "wb")
+
+        fin.write(struct.pack('<I', PCAP_MAGICAL_NUMBER))
+        fin.write(struct.pack('<H', PCAP_VERSION_MAJOR))
+        fin.write(struct.pack('<H', PCAP_VERSION_MINOR))
+        fin.write(struct.pack('<I', PCAP_THISZONE))
+        fin.write(struct.pack('<I', PCAP_SIGFIGS))
+        fin.write(struct.pack('<I', PCAP_SNAPLEN))
+        fin.write(struct.pack('<I', PCAP_NETWORK))
+
+        current_pkt = 0
+        self.ser.timeout = 0.05
+
+        raw_data = b""
+
+        while current_pkt < total_pkt:
+
+            # raw_frame = self.ser.read_until(terminator=DATA_DELIMITER)
+            raw_data += self.ser.read_until(terminator=DATA_DELIMITER)
+            # raw_data.join(self.ser.read_until(terminator=DATA_DELIMITER))
+
+            try:
+                # frame_802_11 = self._analyze_rx_parcel(raw_frame, FLAG_WIFI_PKT)
+                frame_802_11 = self._analyze_rx_parcel(raw_data, FLAG_WIFI_PKT)
+
+            except ValueError:
+                pass
+
+            else:
+                if frame_802_11:
+                    # pkt PCAP header
+                    fin.write(struct.pack('<I', frame_802_11['time'] // 1000000))
+                    fin.write(struct.pack('<I', frame_802_11['time']))
+
+                    fin.write(struct.pack('<I', frame_802_11['len']))
+                    fin.write(struct.pack('<I', frame_802_11['len']))
+
+                    fin.write(struct.pack('%dB' % frame_802_11['len'], *frame_802_11['frame']))
+
+                    current_pkt += 1
+                    print("Current pkt = {}".format(current_pkt))
+
+        fin.close()
+
 
 
 
@@ -273,7 +349,8 @@ def set(tty, bd, channel, pkt_type):
               help="How many packets to capture")
 def run(tty, bd, channel, pkt_type, pcap, n):
     esp32 = Esp32(tty, int(bd))
-    passcd
+    esp32.sniff_wifi(pcap, n)
+    pass
 
 
 # @click.command()
@@ -333,7 +410,7 @@ def run(tty, bd, channel, pkt_type, pcap, n):
 
 main.add_command(get)
 main.add_command(set)
-# main.add_command(run)
+main.add_command(run)
 
 
 if __name__ == '__main__':

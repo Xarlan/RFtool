@@ -38,7 +38,7 @@
 #define ENABLE_AGREGATION		1				// 0 capture 802.11 and immediately send via uart
 												// 1 capture 802.11 frame and analyze it
 
-#define ENABLE_PROMISC			1
+//#define ENABLE_PROMISC			1
 
 /*
  * What components are used
@@ -52,7 +52,7 @@
 #define WIFI_CHANNEL				5
 
 // settings of size queue
-#define SIZE_Q_UART_TX				20
+#define SIZE_Q_UART_TX				60
 
 // list of Queue
 static xQueueHandle qUartTx;					// this Queue used to receive data from any xTask
@@ -148,9 +148,9 @@ void vUartRx(void *pvParameters)
 									break;
 
 								case 0x1:
-#if ENABLE_PROMISC
+//#if ENABLE_PROMISC
 									esp_wifi_set_promiscuous(true);
-#endif
+//#endif
 									break;
 
 								default:
@@ -349,12 +349,12 @@ void vUartTx(void *pvParameters)
 
 		}	/* if (xStatus == pdPASS) */
 
-		if (xStatus == errQUEUE_EMPTY)
-		{
-#if ENABLE_PROMISC
-			esp_wifi_set_promiscuous(true);
-#endif
-		}
+//		if (xStatus == errQUEUE_EMPTY)
+//		{
+//#if ENABLE_PROMISC
+//			esp_wifi_set_promiscuous(true);
+//#endif
+//		}
 
 	}	/* while(1) */
 
@@ -407,7 +407,12 @@ void cb_promiscuous_80211(void *buff, wifi_promiscuous_pkt_type_t type)
 
 		if (xStatus == errQUEUE_FULL)
 		{
-			esp_wifi_set_promiscuous(false);
+//			esp_wifi_set_promiscuous(false);
+
+			printf("Can't create UART-Rx task\n");
+			printf("ESP32 will be reset after 5 sec\n");
+			vTaskDelay(5000/ portTICK_PERIOD_MS);
+			esp_restart();
 		}
 
 	} /* if (capture_802_11->rx_ctrl.rx_state == 0) */
@@ -492,7 +497,7 @@ void init_uart(void)
 	ESP_ERROR_CHECK(uart_set_pin(ESP32_UART_PC, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
 //	ESP_ERROR_CHECK(uart_driver_install(ESP32_UART_PC, 4096, 0, 0, NULL, 0));
-	ESP_ERROR_CHECK(uart_driver_install(ESP32_UART_PC, 4096, 4096, 0, NULL, 0));
+	ESP_ERROR_CHECK(uart_driver_install(ESP32_UART_PC, 1024, 4096, 0, NULL, 0));
 
 
 }
