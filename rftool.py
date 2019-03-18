@@ -58,59 +58,49 @@ class Esp32(object):
             print("Close connection to serial port")
 
     @staticmethod
-    def _analyze_rx_parcel(raw_pkt, type_parcel):
+    def _analyze_rx_parcel(raw_data, type_parcel):
 
-        data_from_esp32 = []
+        esp32_parcels = []
         while True:
 
             try:
-                parcel_begin = raw_pkt.index(type_parcel.encode())
+                parcel_begin = raw_data.index(type_parcel.encode())
 
             except ValueError:
-                return data_from_esp32
-                # break
+                return esp32_parcels, raw_data
 
             else:
 
                 try:
-                    parcel_end = raw_pkt.index(DATA_DELIMITER.encode())
+                    parcel_end = raw_data.index(DATA_DELIMITER.encode())
 
                 except ValueError:
-                    return data_from_esp32
-                    # break
+                    return esp32_parcels, raw_data
 
                 else:
-                    rx_parcel = raw_pkt[parcel_begin + len(type_parcel): parcel_end]
+                    rx_parcel = raw_data[parcel_begin + len(type_parcel): parcel_end]
 
-                    raw_pkt = raw_pkt[parcel_end + len(DATA_DELIMITER):]
+                    raw_data = raw_data[parcel_end + len(DATA_DELIMITER):]
 
                     if type_parcel == FLAG_WIFI_PKT:
                         len_802_11 = rx_parcel[0] | (rx_parcel[1] << 8)
                         t_msec_esp32 = rx_parcel[2] | (rx_parcel[3] << 8) | \
                                        (rx_parcel[4] << 16) | (rx_parcel[5] << 24)  # get timestamp from ESP32
 
-                        temp_val = len(rx_parcel[6:])
 
                         if len_802_11 == len(rx_parcel[6:]):
                             rx_802_11 = {'len': len_802_11,
                                          'time': t_msec_esp32,
                                          'frame': rx_parcel[6:]}
 
-                            data_from_esp32.append(rx_802_11)
+                            esp32_parcels.append(rx_802_11)
 
-                            if len(raw_pkt) == 0:
+                            if len(raw_data) == 0:
                                 # return rx_802_11
-                                return data_from_esp32
+                                return esp32_parcels
 
                     elif type_parcel == FLAG_REQ_SETTINGS:
-                        return raw_pkt
-
-                # raw_pkt = raw_pkt[parcel_begin + len(type_parcel):]
-
-                # parcel_end = raw_pkt.index(DATA_DELIMITER.encode())
-
-            # raw_pkt = raw_pkt[:parcel_end]
-
+                        return rx_parcel, raw_data
 
     def get_settings(self, name=None):
         """
@@ -131,31 +121,32 @@ class Esp32(object):
 
         index = 0
         self.ser.timeout = 0.1
+        raw_data = b""
 
         while index < 10:
 
-            raw_frame = self.ser.read_until(terminator=DATA_DELIMITER)
+            raw_data = self.ser.read_until(terminator=DATA_DELIMITER)
 
-            if raw_frame:
+            # if raw_data:
+            #     try:
+            settings, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_REQ_SETTINGS)
+
+                # except ValueError:
+                #     pass
+
+                # else:
+            if settings[0] == 0:
+                print("Current channel : {}".format(settings[1]))
+                exit(0)
+
+            elif settings[0] == 1:
+                mask = (settings[1] << 24) | (settings[2] << 16) | (settings[3] << 8) | settings[4]
                 try:
-                    frame = self._analyze_rx_parcel(raw_frame, FLAG_REQ_SETTINGS)
+                    print("ESP32 receive next settings : {}".format(PROMISCUOUS_FILTER[mask]))
 
-                except ValueError:
-                    pass
-
-                else:
-                    if frame[0] == 0:
-                        print("Current channel : {}".format(frame[1]))
-                        exit(0)
-
-                    elif frame[0] == 1:
-                        mask = (frame[1] << 24) | (frame[2] << 16) | (frame[3] << 8) | frame[4]
-                        try:
-                            print("ESP32 receive next frame : {}".format(PROMISCUOUS_FILTER[mask]))
-
-                        except KeyError:
-                            click.secho('Unknown filter mask - {:X}'.format(mask), fg='yellow')
-                        exit(0)
+                except KeyError:
+                    click.secho('Unknown filter mask - {:X}'.format(mask), fg='yellow')
+                exit(0)
 
             index += 1
 
@@ -200,36 +191,39 @@ class Esp32(object):
         fin.write(struct.pack('<I', PCAP_NETWORK))
 
         current_pkt = 0
-        self.ser.timeout = 0.05
+        self.ser.timeout = 0.1
 
         raw_data = b""
 
         while current_pkt < total_pkt:
 
-            # raw_frame = self.ser.read_until(terminator=DATA_DELIMITER)
             raw_data += self.ser.read_until(terminator=DATA_DELIMITER)
-            # raw_data.join(self.ser.read_until(terminator=DATA_DELIMITER))
 
             try:
-                # frame_802_11 = self._analyze_rx_parcel(raw_frame, FLAG_WIFI_PKT)
-                frame_802_11 = self._analyze_rx_parcel(raw_data, FLAG_WIFI_PKT)
+                frames_802_11, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_WIFI_PKT)
 
             except ValueError:
-                pass
+                print("Value error")
+                print(raw_data)
+                print("****")
+                print(frames_802_11)
+                print("****")
 
-            else:
-                if frame_802_11:
-                    # pkt PCAP header
-                    fin.write(struct.pack('<I', frame_802_11['time'] // 1000000))
-                    fin.write(struct.pack('<I', frame_802_11['time']))
+            for frame in frames_802_11:
 
-                    fin.write(struct.pack('<I', frame_802_11['len']))
-                    fin.write(struct.pack('<I', frame_802_11['len']))
+                # pkt PCAP header
+                fin.write(struct.pack('<I', frame['time'] // 1000000))
+                fin.write(struct.pack('<I', frame['time']))
 
-                    fin.write(struct.pack('%dB' % frame_802_11['len'], *frame_802_11['frame']))
+                fin.write(struct.pack('<I', frame['len']))
+                fin.write(struct.pack('<I', frame['len']))
 
-                    current_pkt += 1
-                    print("Current pkt = {}".format(current_pkt))
+                fin.write(struct.pack('%dB' % frame['len'], *frame['frame']))
+
+                current_pkt += 1
+                print("Current pkt = {}".format(current_pkt))
+
+            raw_data = rest_bytes
 
         fin.close()
 
