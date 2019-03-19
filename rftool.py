@@ -4,8 +4,6 @@ import serial
 import struct
 import datetime
 import click
-# import bate
-# import logging
 
 
 DEFAULT_TTY_ESP32           = '/dev/ttyUSB0'
@@ -55,7 +53,7 @@ class Esp32(object):
         if self.ser:
             self.ser.write(b'\x01\x01\x00')
             self.ser.close()
-            print("Close connection to serial port")
+            click.secho('Promiscuous mode OFF', fg='magenta')
 
     @staticmethod
     def _analyze_rx_parcel(raw_data, type_parcel):
@@ -87,7 +85,6 @@ class Esp32(object):
                         t_msec_esp32 = rx_parcel[2] | (rx_parcel[3] << 8) | \
                                        (rx_parcel[4] << 16) | (rx_parcel[5] << 24)  # get timestamp from ESP32
 
-
                         if len_802_11 == len(rx_parcel[6:]):
                             rx_802_11 = {'len': len_802_11,
                                          'time': t_msec_esp32,
@@ -96,8 +93,7 @@ class Esp32(object):
                             esp32_parcels.append(rx_802_11)
 
                             if len(raw_data) == 0:
-                                # return rx_802_11
-                                return esp32_parcels
+                                return esp32_parcels, b""
 
                     elif type_parcel == FLAG_REQ_SETTINGS:
                         return rx_parcel, raw_data
@@ -117,45 +113,35 @@ class Esp32(object):
             self.ser.write(b'\x02\x01\x01')
 
         else:
+            return name, False
             print("Unknown parametre")
 
-        index = 0
+        attempt = 0
         self.ser.timeout = 0.1
         raw_data = b""
 
-        while index < 10:
+        while attempt < 10:
 
-            raw_data = self.ser.read_until(terminator=DATA_DELIMITER)
+            raw_data += self.ser.read_until(terminator=DATA_DELIMITER)
 
-            # if raw_data:
-            #     try:
             settings, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_REQ_SETTINGS)
 
-                # except ValueError:
-                #     pass
-
-                # else:
             if settings[0] == 0:
-                print("Current channel : {}".format(settings[1]))
-                exit(0)
+                return name, settings[1]
 
             elif settings[0] == 1:
                 mask = (settings[1] << 24) | (settings[2] << 16) | (settings[3] << 8) | settings[4]
-                try:
-                    print("ESP32 receive next settings : {}".format(PROMISCUOUS_FILTER[mask]))
+                return name, mask
 
-                except KeyError:
-                    click.secho('Unknown filter mask - {:X}'.format(mask), fg='yellow')
-                exit(0)
+            attempt += 1
 
-            index += 1
-
-
-        click.secho("ESP32 doesn't responding. Try reconnect the ESP32", bg='blue', fg='white')
+        click.secho("{} attempts were made to request '{}'".format(attempt, name), fg='cyan')
+        return name, False
 
     def set_settings(self, type_settings, value):
         if type_settings == 'channel':
             self.ser.write(struct.pack('3B', 0x3, 0x1, value))
+
         elif type_settings == 'pkt_type':
             if value == 'MGMT':
                 self.ser.write(b'\x04\x01\x00')
@@ -199,15 +185,15 @@ class Esp32(object):
 
             raw_data += self.ser.read_until(terminator=DATA_DELIMITER)
 
-            try:
-                frames_802_11, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_WIFI_PKT)
+            # try:
+            frames_802_11, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_WIFI_PKT)
 
-            except ValueError:
-                print("Value error")
-                print(raw_data)
-                print("****")
-                print(frames_802_11)
-                print("****")
+            # except ValueError:
+            #     print("Value error")
+            #     print(raw_data)
+            #     print("****")
+            #     print(frames_802_11)
+            #     print("****")
 
             for frame in frames_802_11:
 
@@ -228,55 +214,6 @@ class Esp32(object):
         fin.close()
 
 
-
-
-
-# ser = serial.Serial('/dev/ttyUSB0', baudrate=115200)
-# # print ser.read(10)
-# # ser.write(b'helloqwert\n')
-#
-
-#
-# fin = open("esp32new.pcap", "wb")
-#
-# fin.write(struct.pack('<I', PCAP_MAGICAL_NUMBER))
-# fin.write(struct.pack('<H', PCAP_VERSION_MAJOR))
-# fin.write(struct.pack('<H', PCAP_VERSION_MINOR))
-# fin.write(struct.pack('<I', PCAP_THISZONE))
-# fin.write(struct.pack('<I', PCAP_SIGFIGS))
-# fin.write(struct.pack('<I', PCAP_SNAPLEN))
-# fin.write(struct.pack('<I', PCAP_NETWORK))
-#
-# index = 0
-#
-# while index < 10:
-#     # pkt header
-#     fin.write(struct.pack('<I', datetime.datetime.now().second))
-#     fin.write(struct.pack('<I', datetime.datetime.now().microsecond))
-#
-#     # raw_len_pkt = struct.unpack('3B', ser.readline())
-#     # len_pkt = (raw_len_pkt[1] << 8) | raw_len_pkt[0]
-#
-#     # print("len pkt = {}".format(len_pkt))
-#     # print("len pkt = {}".format(struct.unpack('3B', len_pkt)))
-#
-#     # fin.write(struct.pack('<I', len_pkt))
-#     # fin.write(struct.pack('<I', len_pkt))
-#
-#     # raw_data = ser.read(len_pkt)
-#     raw_data = ser.readline()
-#     print(raw_data)
-#
-#     fin.write(struct.pack('<I', len(raw_data)-1))
-#     fin.write(struct.pack('<I', len(raw_data)-1))
-#     fin.write(raw_data[:-1])
-#
-#     index += 1
-#
-# fin.close()
-# ser.close()
-
-
 @click.group()
 def main():
     pass
@@ -295,7 +232,19 @@ def main():
               help="Request Wi-Fi channel and which Wi-Fi pkt filtered")
 def get(tty, bd, feature):
     esp32 = Esp32(tty, int(bd))
-    esp32.get_settings(feature)
+    request_attribute, attribute_value = esp32.get_settings(feature)
+
+    if request_attribute == 'channel' and attribute_value:
+        click.secho("Current channel: {}".format(attribute_value))
+
+    elif request_attribute == "mask" and attribute_value:
+        try:
+            print("ESP32 receive next settings : {}".format(PROMISCUOUS_FILTER[attribute_value]))
+
+        except KeyError:
+            click.secho('Unknown filter mask - {:X}'.format(attribute_value), fg='yellow')
+    else:
+        pass
 
 
 @click.command()
@@ -344,62 +293,6 @@ def set(tty, bd, channel, pkt_type):
 def run(tty, bd, channel, pkt_type, pcap, n):
     esp32 = Esp32(tty, int(bd))
     esp32.sniff_wifi(pcap, n)
-    pass
-
-
-# @click.command()
-# @click.option('-ch', default=1, type=click.IntRange(1, 13), help="Select Wi-Fi channel, default channel = 1")
-# @click.option('-n', default=10, type=click.INT, help="How many packets to capture")
-# @click.option('-tty', default=DEFAULT_TTY_ESP32, help='Serial port where connected esp32')
-# @click.option('-bd', default=DEFAULT_TTY_ESP32_BAUDRATE, help='Setup baudrate', type=click.Choice([115200, 921600]))
-# @click.option('-pcap', default='esp32', help='Name of file to store result')
-# def run(ch, n, tty, bd, pcap):
-#     try:
-#         ser = serial.Serial(tty, baudrate=115200)
-#
-#     except serial.SerialException as e:
-#         print(e.strerror)
-#
-#     else:
-#         fin = open(''.join((pcap, '.pcap')), "wb")
-#
-#         fin.write(struct.pack('<I', PCAP_MAGICAL_NUMBER))
-#         fin.write(struct.pack('<H', PCAP_VERSION_MAJOR))
-#         fin.write(struct.pack('<H', PCAP_VERSION_MINOR))
-#         fin.write(struct.pack('<I', PCAP_THISZONE))
-#         fin.write(struct.pack('<I', PCAP_SIGFIGS))
-#         fin.write(struct.pack('<I', PCAP_SNAPLEN))
-#         fin.write(struct.pack('<I', PCAP_NETWORK))
-#
-#         index = 0
-#         while index < n:
-#             # pkt header
-#             fin.write(struct.pack('<I', datetime.datetime.now().second))
-#             fin.write(struct.pack('<I', datetime.datetime.now().microsecond))
-#
-#             # raw_len_pkt = struct.unpack('3B', ser.readline())
-#             # len_pkt = (raw_len_pkt[1] << 8) | raw_len_pkt[0]
-#
-#             # print("len pkt = {}".format(len_pkt))
-#             # print("len pkt = {}".format(struct.unpack('3B', len_pkt)))
-#
-#             # fin.write(struct.pack('<I', len_pkt))
-#             # fin.write(struct.pack('<I', len_pkt))
-#
-#             # raw_data = ser.read(len_pkt)
-#             raw_data = ser.readline()
-#             print(raw_data)
-#
-#             fin.write(struct.pack('<I', len(raw_data)-1))
-#             fin.write(struct.pack('<I', len(raw_data)-1))
-#             fin.write(raw_data[:-1])
-#
-#             index += 1
-#
-#         print("Current baudrate = {}".format(bd))
-#         ser.close()
-#
-#
 
 
 main.add_command(get)
@@ -412,6 +305,4 @@ if __name__ == '__main__':
         main()
     except click.ClickException as e:
         print(e.message)
-    # except TypeError as e:
-    #     print(e)
 
