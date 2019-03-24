@@ -74,15 +74,15 @@ WEP : 2304 + 34 + 8 = 2346 bytes
 WPA (TKIP) : 2304 + 34 + 20 = 2358 bytes
 WPA2 (CCMP) : 2304 + 34 + 16 = 2354 bytes
 */
-typedef struct {
-					uint16_t	len_pkt;
-					uint8_t		pkt[ESP32_HARDWARE_RX_BUFFER_BYTE];
-				} wireshark_802_11_t;
-
-
-typedef struct {
-				wifi_pkt_rx_ctrl_t		ESP32_RADIO_METADATA;
-				ieee80211_mpdu_t		MPDU;
-				} catch_80211_t;
+//typedef struct {
+//					uint16_t	len_pkt;
+//					uint8_t		pkt[ESP32_HARDWARE_RX_BUFFER_BYTE];
+//				} wireshark_802_11_t;
+//
+//
+//typedef struct {
+//				wifi_pkt_rx_ctrl_t		ESP32_RADIO_METADATA;
+//				ieee80211_mpdu_t		MPDU;
+//				} catch_80211_t;
 
 #endif /* MAIN_802_11_H_ */

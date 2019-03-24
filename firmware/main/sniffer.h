@@ -13,11 +13,13 @@
 												// AMPDU = 65535 bytes
 												// ESP32 has hardware buffer of 1600 bytes
 
-typedef struct {
-				uint8_t		type_data;
-				uint16_t	len_data;
-				char		data[SIZE_AMPDU];
-				} tx_parcel_t;
+#define MAX_AP			30						// Max number of AP found
+
+//typedef struct {
+//				uint8_t		type_data;
+//				uint16_t	len_data;
+//				char		data[SIZE_AMPDU];
+//				} tx_parcel_t;
 
 //typedef struct {
 //				uint8_t		type;
@@ -37,5 +39,16 @@ void init_uart(void);
 *******************************************************************************/
 void init_wifi(void);
 
+
+
+/******************************************************************************
+* 						From auth_mode code to string                  		  *
+*******************************************************************************/
+char* getAuthModeName(wifi_auth_mode_t auth_mode);
+
+/******************************************************************************
+* 						Set mode for Wi-Fi			                  		  *
+*******************************************************************************/
+void pwn_esp_wifi_set_mode(wifi_mode_t mode);
 
 #endif /* SNIFFER_H_ */

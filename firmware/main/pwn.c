@@ -26,10 +26,6 @@
 // Error library
 #include "esp_err.h"
 
-//// WDT
-//#include "soc/timer_group_struct.h"
-//#include "soc/timer_group_reg.h"
-
 // Custom h-files
 #include "802_11.h"
 #include "sniffer.h"
@@ -82,6 +78,7 @@ static xQueueHandle qUartTx;					// this Queue used to receive data from any xTa
 												// it used TLV format - Type-Length-Value
 
 
+
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
     return ESP_OK;
@@ -115,7 +112,14 @@ void vUartRx(void *pvParameters)
 	wifi_second_chan_t second_wifi_channel = WIFI_SECOND_CHAN_NONE;
 	wifi_promiscuous_filter_t current_filter_pkt;
 	portBASE_TYPE xStatus;
+	uint16_t ap_num = MAX_AP;
+	wifi_ap_record_t ap_records[MAX_AP];
 
+	wifi_scan_config_t scan_config;
+		scan_config.ssid 		= 0;
+		scan_config.bssid		= 0;
+		scan_config.channel		= 0;
+		scan_config.show_hidden	= true;
 
 	while(1)
 	{
@@ -148,9 +152,7 @@ void vUartRx(void *pvParameters)
 									break;
 
 								case 0x1:
-//#if ENABLE_PROMISC
 									esp_wifi_set_promiscuous(true);
-//#endif
 									break;
 
 								default:
@@ -181,6 +183,7 @@ void vUartRx(void *pvParameters)
 									parcel.ESP32_RADIO_METADATA.sig_len = 2;
 									xStatus = xQueueSendFromISR(qUartTx, &parcel, 0);
 									break;
+
 								/*
 								* Request filter of pkt
 								*/
@@ -194,8 +197,49 @@ void vUartRx(void *pvParameters)
 									parcel.MPDU.payload[4] = (uint8_t)(current_filter_pkt.filter_mask & 0xFF);
 									parcel.ESP32_RADIO_METADATA.sig_len = 5;
 
-									printf("Current filter %X\n", current_filter_pkt.filter_mask);
+//									printf("Current filter %X\n", current_filter_pkt.filter_mask);
 									xStatus = xQueueSendFromISR(qUartTx, &parcel, 0);
+
+								/*
+								 * ESP32 Scan Wi-Fi
+								 */
+								case 0x2:
+									pwn_esp_wifi_set_mode(WIFI_MODE_STA);
+
+//									printf("Size of struct = %d\n", sizeof(wifi_ap_record_t));
+									printf("Start scanning...");
+									ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
+									printf(" completed!\n\n");
+
+									// get the list of APs found in the last scan
+
+									ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_num, ap_records));
+
+									// print the list
+									printf("Found %d access points:\n", ap_num);
+									printf("\n");
+									printf("               SSID              | Channel | RSSI |   Auth Mode \n");
+									printf("----------------------------------------------------------------\n");
+									for(int i = 0; i < ap_num; i++)
+										printf("%32s | %7d | %4d | %12s   %d\n", (char *)ap_records[i].ssid,
+																			ap_records[i].primary,
+																			ap_records[i].rssi,
+																			getAuthModeName(ap_records[i].authmode),
+																			ap_records[i].wps);
+									printf("----------------------------------------------------------------\n");
+
+									parcel.flag = ID_PARCEL_GET_SETTINGS;
+									for(int i = 0; i < ap_num; i++)
+									{
+										memcpy(parcel.MPDU.payload, &ap_records[i], sizeof(wifi_ap_record_t));
+										parcel.ESP32_RADIO_METADATA.sig_len = sizeof(wifi_ap_record_t);
+										xStatus = xQueueSendFromISR(qUartTx, &parcel, 0);
+
+									}
+
+
+									pwn_esp_wifi_set_mode(WIFI_MODE_NULL);
+									break;
 
 								default:
 									break;
@@ -441,7 +485,7 @@ void app_main()
 		esp_restart();
 	}
 
-	xReturned = xTaskCreatePinnedToCore(vUartRx, "UartRx", 4096, NULL, 1, &hwnd_vUartRx, 1);
+	xReturned = xTaskCreatePinnedToCore(vUartRx, "UartRx", 8192, NULL, 1, &hwnd_vUartRx, 1);
 	if (xReturned != pdPASS)
 	{
 		printf("Can't create UART-Rx task\n");
@@ -458,6 +502,37 @@ void app_main()
 		vTaskDelay(3000/ portTICK_PERIOD_MS);
 		esp_restart();
 	}
+
+
+	// configure and run the scan process in blocking mode
+//	wifi_scan_config_t scan_config = {
+//		.ssid = 0,
+//		.bssid = 0,
+//		.channel = 0,
+//        .show_hidden = true
+//    };
+//	printf("Start scanning...");
+//	ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
+//	printf(" completed!\n");
+//	printf("\n");
+
+//	// get the list of APs found in the last scan
+//	uint16_t ap_num = 20;
+//	wifi_ap_record_t ap_records[20];
+//	ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_num, ap_records));
+//
+//	// print the list
+//	printf("Found %d access points:\n", ap_num);
+//	printf("\n");
+//	printf("               SSID              | Channel | RSSI |   Auth Mode \n");
+//	printf("----------------------------------------------------------------\n");
+//	for(int i = 0; i < ap_num; i++)
+//		printf("%32s | %7d | %4d | %12s\n", (char *)ap_records[i].ssid,
+//											ap_records[i].primary,
+//											ap_records[i].rssi,
+//											getAuthModeName(ap_records[i].authmode));
+//	printf("----------------------------------------------------------------\n");
+
 
 
 //	   wifi_promiscuous_filter_t filter = {

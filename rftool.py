@@ -112,6 +112,9 @@ class Esp32(object):
         elif name == 'mask':
             self.ser.write(b'\x02\x01\x01')
 
+        elif name == 'ap':
+            self.ser.write(b'\x02\x01\x02')
+
         else:
             return name, False
             print("Unknown parametre")
@@ -123,15 +126,17 @@ class Esp32(object):
         while attempt < 10:
 
             raw_data += self.ser.read_until(terminator=DATA_DELIMITER)
+            print(raw_data)
 
             settings, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_REQ_SETTINGS)
 
-            if settings[0] == 0:
-                return name, settings[1]
+            if len(settings) > 0:
+                if settings[0] == 0 and (len(settings) > 0):
+                    return name, settings[1]
 
-            elif settings[0] == 1:
-                mask = (settings[1] << 24) | (settings[2] << 16) | (settings[3] << 8) | settings[4]
-                return name, mask
+                elif settings[0] == 1 and (len(settings) > 0):
+                    mask = (settings[1] << 24) | (settings[2] << 16) | (settings[3] << 8) | settings[4]
+                    return name, mask
 
             attempt += 1
 
@@ -185,15 +190,7 @@ class Esp32(object):
 
             raw_data += self.ser.read_until(terminator=DATA_DELIMITER)
 
-            # try:
             frames_802_11, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_WIFI_PKT)
-
-            # except ValueError:
-            #     print("Value error")
-            #     print(raw_data)
-            #     print("****")
-            #     print(frames_802_11)
-            #     print("****")
 
             for frame in frames_802_11:
 
@@ -207,7 +204,11 @@ class Esp32(object):
                 fin.write(struct.pack('%dB' % frame['len'], *frame['frame']))
 
                 current_pkt += 1
-                print("Current pkt = {}".format(current_pkt))
+                addr_mac1 = ':'.join("{:02X}".format(i) for i in frame['frame'][4:10])
+                addr_mac2 = ':'.join("{:02X}".format(i) for i in frame['frame'][10:16])
+                addr_mac3 = ':'.join("{:02X}".format(i) for i in frame['frame'][16:22])
+
+                print("{:>5}  {}  {}  {}".format(current_pkt, addr_mac1, addr_mac2, addr_mac3))
 
             raw_data = rest_bytes
 
@@ -228,7 +229,7 @@ def main():
               type=click.Choice(['115200', '921600']),
               help='Setup baudrate; default = {}'.format(DEFAULT_TTY_ESP32_BAUDRATE))
 @click.option('-s', '--setting', 'feature',
-              type=click.Choice(['channel', 'mask']),
+              type=click.Choice(['channel', 'mask', 'ap']),
               help="Request Wi-Fi channel and which Wi-Fi pkt filtered")
 def get(tty, bd, feature):
     esp32 = Esp32(tty, int(bd))
