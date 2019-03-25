@@ -47,8 +47,8 @@ void init_wifi(void);
 char* getAuthModeName(wifi_auth_mode_t auth_mode);
 
 /******************************************************************************
-* 						Set mode for Wi-Fi			                  		  *
+* 						Switch mode for Wi-Fi		                  		  *
 *******************************************************************************/
-void pwn_esp_wifi_set_mode(wifi_mode_t mode);
+void pwn_esp_wifi_set_mode(wifi_mode_t new_mode);
 
 #endif /* SNIFFER_H_ */

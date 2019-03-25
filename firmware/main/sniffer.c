@@ -23,9 +23,9 @@ char* getAuthModeName(wifi_auth_mode_t auth_mode)
 /******************************************************************************
 * 						Set mode for Wi-Fi			                  		  *
 *******************************************************************************/
-void pwn_esp_wifi_set_mode(wifi_mode_t mode)
+void pwn_esp_wifi_set_mode(wifi_mode_t new_mode)
 {
 	ESP_ERROR_CHECK(esp_wifi_stop());
-	ESP_ERROR_CHECK(esp_wifi_set_mode(mode));
+	ESP_ERROR_CHECK(esp_wifi_set_mode(new_mode));
 	ESP_ERROR_CHECK(esp_wifi_start());
 }

@@ -126,7 +126,7 @@ class Esp32(object):
         while attempt < 10:
 
             raw_data += self.ser.read_until(terminator=DATA_DELIMITER)
-            print(raw_data)
+            # print(raw_data)
 
             settings, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_REQ_SETTINGS)
 
@@ -145,20 +145,23 @@ class Esp32(object):
 
     def set_settings(self, type_settings, value):
         if type_settings == 'channel':
-            self.ser.write(struct.pack('3B', 0x3, 0x1, value))
+            self.ser.write(struct.pack('4B', 0x3, 0x2, 0x1, value))
 
         elif type_settings == 'pkt_type':
             if value == 'MGMT':
-                self.ser.write(b'\x04\x01\x00')
+                self.ser.write(b'\x03\x02\x02\x00')
 
             elif value == 'CTRL':
-                self.ser.write(b'\x04\x01\x01')
+                self.ser.write(b'\x03\x02\x02\x01')
+                # self.ser.write(b'\x04\x01\x01')
 
             elif value == 'DATA':
-                self.ser.write(b'\x04\x01\x02')
+                self.ser.write(b'\x03\x02\x02\x02')
+                # self.ser.write(b'\x04\x01\x02')
 
             elif value == 'ALL':
-                self.ser.write(b'\x04\x01\x03')
+                self.ser.write(b'\x03\x02\x02\x03')
+                # self.ser.write(b'\x04\x01\x03')
 
             else:
                 click.secho("At this moment this type of filter {} doesn't support".format(value), bg='blue', fg='white')
@@ -240,7 +243,7 @@ def get(tty, bd, feature):
 
     elif request_attribute == "mask" and attribute_value:
         try:
-            print("ESP32 receive next settings : {}".format(PROMISCUOUS_FILTER[attribute_value]))
+            print("ESP32 receive next pkt : {}".format(PROMISCUOUS_FILTER[attribute_value]))
 
         except KeyError:
             click.secho('Unknown filter mask - {:X}'.format(attribute_value), fg='yellow')

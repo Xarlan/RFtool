@@ -63,12 +63,13 @@ static xQueueHandle qUartTx;					// this Queue used to receive data from any xTa
 #define TLV_TYPE				0x0
 #define TLV_LENGTH				0x1
 #define TLV_VALUE				0x2
+#define TLV_VALUE_SETTINGS		0x3
 
 //id for cmd from PC
 #define ID_CMD_ENABNLE_PROMISC	0x1
 #define	ID_CMD_GET				0x2
-#define	ID_CMD_SET_CHANNEL		0x3
-#define ID_CMD_SET_FILTER		0x4
+#define	ID_CMD_SET				0x3
+//#define ID_CMD_SET_FILTER		0x4
 
 
 #define UART_BUFF_RX			128				// size in bytes, receive settings from PC
@@ -120,6 +121,8 @@ void vUartRx(void *pvParameters)
 		scan_config.bssid		= 0;
 		scan_config.channel		= 0;
 		scan_config.show_hidden	= true;
+		scan_config.scan_type	= WIFI_SCAN_TYPE_PASSIVE;
+		scan_config.scan_time.passive = 1000;
 
 	while(1)
 	{
@@ -248,58 +251,100 @@ void vUartRx(void *pvParameters)
 						break; /* for case 2 */
 
 	/*********************
-	 * Set Wi-Fi channel *
+	 *    Set Settings   *
 	 ********************/
-					case ID_CMD_SET_CHANNEL:
-						if ( tlv_cmd[TLV_LENGTH] == 1)
-						{
-							if ( (tlv_cmd[2] >=1 ) & (tlv_cmd[2] < 14) )
-							{
-								ESP_ERROR_CHECK(esp_wifi_set_channel(tlv_cmd[2], second_wifi_channel));
-							}
-						}
-						break;
-
-	/*********************
-	 * Set Wi-Fi channel *
-	 ********************/
-					case ID_CMD_SET_FILTER:
-						if ( tlv_cmd[TLV_LENGTH] == 1)
+					case ID_CMD_SET:
+						if ( tlv_cmd[TLV_LENGTH] == 2)
 						{
 							switch(tlv_cmd[TLV_VALUE])
 							{
-								case 0:
-									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT;
+								/*
+								 * Set Wi-Fi channel
+								 */
+								case 0x1:
+									if ( (tlv_cmd[TLV_VALUE_SETTINGS] >=1 ) & (tlv_cmd[TLV_VALUE_SETTINGS] < 14) )
+									{
+										ESP_ERROR_CHECK(esp_wifi_set_channel(tlv_cmd[2], second_wifi_channel));
+									}
 									break;
 
-								case 1:
-									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_CTRL;
-									break;
+								/*
+								 * Set type pkt which esp32 should receive
+								 */
+								case 0x2:
+									switch(tlv_cmd[TLV_VALUE_SETTINGS])
+									{
+										case 0:
+											current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT;
+											break;
 
-								case 2:
-									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
-									break;
+										case 1:
+											current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_CTRL;
+											break;
 
-								case 3:
-									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_ALL;
+										case 2:
+											current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
+											break;
+
+										case 3:
+											current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_ALL;
+											break;
+
+										default:
+											current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
+											break;
+									}
+									ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&current_filter_pkt));
 									break;
 
 								default:
-									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
 									break;
-							}
-							ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&current_filter_pkt));
-						}
+							} /* switch(tlv_cmd[TLV_VALUE]) */
+						} /* if ( tlv_cmd[TLV_LENGTH] == 2) */
 						break;
 
+//	/*********************
+//	 * Set Wi-Fi channel *
+//	 ********************/
+//					case ID_CMD_SET_FILTER:
+//						if ( tlv_cmd[TLV_LENGTH] == 1)
+//						{
+//							switch(tlv_cmd[TLV_VALUE])
+//							{
+//								case 0:
+//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT;
+//									break;
+//
+//								case 1:
+//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_CTRL;
+//									break;
+//
+//								case 2:
+//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
+//									break;
+//
+//								case 3:
+//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_ALL;
+//									break;
+//
+//								default:
+//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
+//									break;
+//							}
+//							ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&current_filter_pkt));
+//						}
+//						break;
+//
 					default:
 						printf("\n*******\nUnknown cmd\n*****\n");
-				}
+
+				} 	/* switch(tlv_cmd[TLV_TYPE])*/
 
 			} 		/* if (rx_bytes > 0) */
 
 		} 			/* if (len_tlv_cmd > 0) */
-	}
+
+	} 				/* while (1) */
 
 	vTaskDelete(NULL);
 }
