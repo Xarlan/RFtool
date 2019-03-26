@@ -57,6 +57,7 @@ static xQueueHandle qUartTx;					// this Queue used to receive data from any xTa
 // ID PARCEL for vUartTx
 #define ID_PARCEL_WIFI			0x1
 #define ID_PARCEL_GET_SETTINGS	0x2
+#define ID_PARCEL_GET_AP		0x3
 
 // id for position in buffer TLV
 // [Type][Length][Value]
@@ -121,8 +122,8 @@ void vUartRx(void *pvParameters)
 		scan_config.bssid		= 0;
 		scan_config.channel		= 0;
 		scan_config.show_hidden	= true;
-		scan_config.scan_type	= WIFI_SCAN_TYPE_PASSIVE;
-		scan_config.scan_time.passive = 1000;
+//		scan_config.scan_type	= WIFI_SCAN_TYPE_PASSIVE;
+//		scan_config.scan_time.passive = 1000;
 
 	while(1)
 	{
@@ -207,7 +208,8 @@ void vUartRx(void *pvParameters)
 								 * ESP32 Scan Wi-Fi
 								 */
 								case 0x2:
-									pwn_esp_wifi_set_mode(WIFI_MODE_STA);
+//									pwn_esp_wifi_set_mode(WIFI_MODE_STA);
+									ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
 //									printf("Size of struct = %d\n", sizeof(wifi_ap_record_t));
 									printf("Start scanning...");
@@ -231,7 +233,7 @@ void vUartRx(void *pvParameters)
 																			ap_records[i].wps);
 									printf("----------------------------------------------------------------\n");
 
-									parcel.flag = ID_PARCEL_GET_SETTINGS;
+									parcel.flag = ID_PARCEL_GET_AP;
 									for(int i = 0; i < ap_num; i++)
 									{
 										memcpy(parcel.MPDU.payload, &ap_records[i], sizeof(wifi_ap_record_t));
@@ -241,7 +243,9 @@ void vUartRx(void *pvParameters)
 									}
 
 
-									pwn_esp_wifi_set_mode(WIFI_MODE_NULL);
+//									pwn_esp_wifi_set_mode(WIFI_MODE_NULL);
+									ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
+
 									break;
 
 								default:
@@ -264,7 +268,7 @@ void vUartRx(void *pvParameters)
 								case 0x1:
 									if ( (tlv_cmd[TLV_VALUE_SETTINGS] >=1 ) & (tlv_cmd[TLV_VALUE_SETTINGS] < 14) )
 									{
-										ESP_ERROR_CHECK(esp_wifi_set_channel(tlv_cmd[2], second_wifi_channel));
+										ESP_ERROR_CHECK(esp_wifi_set_channel(tlv_cmd[TLV_VALUE_SETTINGS], second_wifi_channel));
 									}
 									break;
 
@@ -365,6 +369,7 @@ void vUartTx(void *pvParameters)
 	const char * DATA_DELIMITER		 	= "<<<PARCEL>>>";
 	const char * FLAG_WIFI_PKT	 		= "<<<WiFi>>>";
 	const char * FLAG_REQ_SETTINGS		= "<<<RSTG>>>";
+	const char * FLAG_REQ_AP			= "<<<RAPs>>>";
 //	const char * FLAG_ERROR			= "<<<Errr>>>";
 
 	parcel_tx_t	parcel;
@@ -422,6 +427,15 @@ void vUartTx(void *pvParameters)
 
 				case ID_PARCEL_GET_SETTINGS:
 					uart_write_bytes(ESP32_UART_PC, FLAG_REQ_SETTINGS, 10);
+
+					uart_write_bytes(ESP32_UART_PC, (char *) parcel.MPDU.payload, parcel.ESP32_RADIO_METADATA.sig_len);
+
+					uart_write_bytes(ESP32_UART_PC, DATA_DELIMITER, 12);
+
+					break;
+
+				case ID_PARCEL_GET_AP:
+					uart_write_bytes(ESP32_UART_PC, FLAG_REQ_AP, 10);
 
 					uart_write_bytes(ESP32_UART_PC, (char *) parcel.MPDU.payload, parcel.ESP32_RADIO_METADATA.sig_len);
 
