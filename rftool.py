@@ -250,6 +250,17 @@ def get(tty, bd, feature):
 
         except KeyError:
             click.secho('Unknown filter mask - {:X}'.format(attribute_value), fg='yellow')
+
+    elif request_attribute == 'ap' and attribute_value:
+
+        print("{:>11} {:>20}                            | Channel | RSSI |   Auth Mode ".format('BSSID', 'SSID'))
+        # print(" BSSID              SSID              | Channel | RSSI |   Auth Mode \n");
+        for ap in attribute_value:
+            bssid = ":".join("{:02X}".format(i) for i in ap['bssid'])
+            ssid = ap['ssid']
+            print("{} {:>32}".format(bssid, ssid))
+            # print("{:>32s}".format( ssid))
+        # print(attribute_value)
     else:
         click.secho("Can't understand - {:X}".format(attribute_value), fg='yellow')
         pass

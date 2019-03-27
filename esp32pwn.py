@@ -102,10 +102,37 @@ class Esp32(object):
                         return rx_parcel, raw_data
 
                     elif type_parcel == FLAG_REQ_AP:
-                        # print("MAC: {}".format(":".join("{:02X}".format(i) in rx_parcel[:6])))
-                        mac = struct.unpack('6B', rx_parcel[0:6])
-                        name_ap = rx_parcel[6:39].decode()
-                        print(mac, name_ap)
+                        bssid = struct.unpack('6B', rx_parcel[0:6])
+                        ssid = rx_parcel[6:39].decode()
+                        channel = rx_parcel[39]
+                        second_channel = struct.unpack('4B', rx_parcel[40:44])
+                        rssi = rx_parcel[44]
+                        authmode = struct.unpack('4B', rx_parcel[45:49])
+                        pairwise_cipher = struct.unpack('4B', rx_parcel[49:53])
+                        group_cipher = struct.unpack('4B', rx_parcel[53:57])
+                        ant = struct.unpack('4B', rx_parcel[57:61])
+                        phy_bgn = struct.unpack('I', rx_parcel[61:65])
+                        # phy_11g = struct.unpack('I', rx_parcel[61:65])
+                        # phy_11n = struct.unpack('I', rx_parcel[61:65])
+                        # phy_lr = struct.unpack('I', rx_parcel[61:65])
+                        # wps = struct.unpack('I', rx_parcel[61:65])
+                        country = struct.unpack('12B', rx_parcel[65:77])
+
+                        # format of this struct was get from ESP-IDF -> esp_wifi_types.h -> wifi_ap_record_t
+                        discover_ap = {
+                                        'bssid':            bssid,
+                                        'ssid':             ssid,
+                                        'channel':          channel,
+                                        '2channel':         second_channel,
+                                        'rssi':             rssi,
+                                        'authmode':         authmode,
+                                        'pairwise_cipher':  pairwise_cipher,
+                                        'group_cipher':     group_cipher,
+                                        'ant':              ant,
+                                        'phy_bgn':          phy_bgn,
+                                        'country':          country
+                                        }
+                        return discover_ap, raw_data
 
 
     def get_settings(self, what_we_ask=None):
@@ -155,9 +182,17 @@ class Esp32(object):
         # click.secho("{} attempts were made to request '{}'".format(attempt, what_we_ask), fg='cyan')
         else:
             self.ser.timeout = 5
+            discover_aps = []
+            click.secho("Please, wait {} seconds while esp32 scan all channels".format(self.ser.get_settings()['timeout']))
             raw_data += self.ser.read_until(terminator=DATA_DELIMITER)
-            discover_aps, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_REQ_AP)
-            print(raw_data)
+
+            while raw_data:
+                ap, rest_bytes = self._analyze_rx_parcel(raw_data, FLAG_REQ_AP)
+                discover_aps.append(ap)
+                raw_data = rest_bytes
+
+            return what_we_ask, discover_aps
+            # print(raw_data)
 
         return what_we_ask, False
 

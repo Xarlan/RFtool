@@ -211,6 +211,15 @@ void vUartRx(void *pvParameters)
 //									pwn_esp_wifi_set_mode(WIFI_MODE_STA);
 									ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
+									printf("****\n");
+									printf("wifi_second_chan_t = %d\n", sizeof(wifi_second_chan_t));
+									printf("wifi_auth_mode_t   = %d\n", sizeof(wifi_auth_mode_t));
+									printf("wifi_cipher_type_t = %d\n", sizeof(wifi_cipher_type_t));
+									printf("wifi_ant_t 		   = %d\n", sizeof(wifi_ant_t));
+									printf("wifi_country_t     = %d\n", sizeof(wifi_country_t));
+
+									printf("****\n");
+
 //									printf("Size of struct = %d\n", sizeof(wifi_ap_record_t));
 									printf("Start scanning...");
 									ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
