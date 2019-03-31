@@ -109,6 +109,7 @@ void vUartRx(void *pvParameters)
 	size_t len_tlv_cmd = 0;
 	int rx_bytes;
 	parcel_tx_t	parcel;
+	uint8_t phy;
 
 	uint8_t primary_wifi_channel;
 	wifi_second_chan_t second_wifi_channel = WIFI_SECOND_CHAN_NONE;
@@ -201,15 +202,14 @@ void vUartRx(void *pvParameters)
 									parcel.MPDU.payload[4] = (uint8_t)(current_filter_pkt.filter_mask & 0xFF);
 									parcel.ESP32_RADIO_METADATA.sig_len = 5;
 
-//									printf("Current filter %X\n", current_filter_pkt.filter_mask);
 									xStatus = xQueueSendFromISR(qUartTx, &parcel, 0);
 
 								/*
 								 * ESP32 Scan Wi-Fi
 								 */
 								case 0x2:
-//									pwn_esp_wifi_set_mode(WIFI_MODE_STA);
-									ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+									pwn_esp_wifi_set_mode(WIFI_MODE_STA);
+//									ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
 									printf("****\n");
 									printf("wifi_second_chan_t = %d\n", sizeof(wifi_second_chan_t));
@@ -220,7 +220,7 @@ void vUartRx(void *pvParameters)
 
 									printf("****\n");
 
-//									printf("Size of struct = %d\n", sizeof(wifi_ap_record_t));
+									printf("Size of struct = %d\n", sizeof(wifi_ap_record_t));
 									printf("Start scanning...");
 									ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
 									printf(" completed!\n\n");
@@ -230,30 +230,47 @@ void vUartRx(void *pvParameters)
 									ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_num, ap_records));
 
 									// print the list
-									printf("Found %d access points:\n", ap_num);
-									printf("\n");
-									printf("               SSID              | Channel | RSSI |   Auth Mode \n");
-									printf("----------------------------------------------------------------\n");
-									for(int i = 0; i < ap_num; i++)
-										printf("%32s | %7d | %4d | %12s   %d\n", (char *)ap_records[i].ssid,
-																			ap_records[i].primary,
-																			ap_records[i].rssi,
-																			getAuthModeName(ap_records[i].authmode),
-																			ap_records[i].wps);
-									printf("----------------------------------------------------------------\n");
+//									printf("Found %d access points:\n", ap_num);
+//									printf("\n");
+//									printf("               SSID              | Channel | RSSI |   Auth Mode \n");
+//									printf("----------------------------------------------------------------\n");
+//									for(int i = 0; i < ap_num; i++)
+//									{
+//										printf("%32s | %7d | %4d | %12s   %d\n", (char *)ap_records[i].ssid,
+//																			ap_records[i].primary,
+//																			ap_records[i].rssi,
+//																			getAuthModeName(ap_records[i].authmode),
+//																			ap_records[i].wps);
+//
+//									}
+//									printf("----------------------------------------------------------------\n");
 
 									parcel.flag = ID_PARCEL_GET_AP;
 									for(int i = 0; i < ap_num; i++)
 									{
-										memcpy(parcel.MPDU.payload, &ap_records[i], sizeof(wifi_ap_record_t));
-										parcel.ESP32_RADIO_METADATA.sig_len = sizeof(wifi_ap_record_t);
+										memcpy(parcel.MPDU.payload, ap_records[i].bssid, 6);
+										memcpy(parcel.MPDU.payload + 6, ap_records[i].ssid, 33);
+										memcpy(parcel.MPDU.payload + 39, &ap_records[i].primary, 1);
+										memcpy(parcel.MPDU.payload + 40, &ap_records[i].rssi, 1);
+										memcpy(parcel.MPDU.payload + 41, &ap_records[i].authmode, 1);
+										phy = ap_records[i].phy_11b |
+												(ap_records[i].phy_11g << 1) |
+												(ap_records[i].phy_11n << 2) |
+												(ap_records[i].phy_lr << 3) |
+												(ap_records[i].wps << 4);
+
+										memcpy(parcel.MPDU.payload + 42, &phy, 1);
+
+//										memcpy(parcel.MPDU.payload, &ap_records[i], sizeof(wifi_ap_record_t));
+//										parcel.ESP32_RADIO_METADATA.sig_len = sizeof(wifi_ap_record_t);
+										parcel.ESP32_RADIO_METADATA.sig_len = 43;
 										xStatus = xQueueSendFromISR(qUartTx, &parcel, 0);
 
 									}
 
 
-//									pwn_esp_wifi_set_mode(WIFI_MODE_NULL);
-									ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
+									pwn_esp_wifi_set_mode(WIFI_MODE_NULL);
+//									ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
 
 									break;
 
@@ -316,38 +333,6 @@ void vUartRx(void *pvParameters)
 						} /* if ( tlv_cmd[TLV_LENGTH] == 2) */
 						break;
 
-//	/*********************
-//	 * Set Wi-Fi channel *
-//	 ********************/
-//					case ID_CMD_SET_FILTER:
-//						if ( tlv_cmd[TLV_LENGTH] == 1)
-//						{
-//							switch(tlv_cmd[TLV_VALUE])
-//							{
-//								case 0:
-//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT;
-//									break;
-//
-//								case 1:
-//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_CTRL;
-//									break;
-//
-//								case 2:
-//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
-//									break;
-//
-//								case 3:
-//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_ALL;
-//									break;
-//
-//								default:
-//									current_filter_pkt.filter_mask = WIFI_PROMIS_FILTER_MASK_DATA;
-//									break;
-//							}
-//							ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&current_filter_pkt));
-//						}
-//						break;
-//
 					default:
 						printf("\n*******\nUnknown cmd\n*****\n");
 

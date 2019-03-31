@@ -37,6 +37,16 @@ PROMISCUOUS_FILTER = {
                         4: "DATA frame"
                      }
 
+# this data from ESP-IDF -> esp_wifi_types.h -> wifi_auth_mode_t
+WIFI_AUTH_MODE = {
+                    0: 'OPEN',
+                    1: 'WEB',
+                    2: 'WPA-PSK',
+                    3: 'WPA2-PSK',
+                    4: 'WPA|WPA2-PSK',
+                    5: 'WPA2_ENTERPRISE'
+                  }
+
 
 class Esp32(object):
 
@@ -105,32 +115,18 @@ class Esp32(object):
                         bssid = struct.unpack('6B', rx_parcel[0:6])
                         ssid = rx_parcel[6:39].decode()
                         channel = rx_parcel[39]
-                        second_channel = struct.unpack('4B', rx_parcel[40:44])
-                        rssi = rx_parcel[44]
-                        authmode = struct.unpack('4B', rx_parcel[45:49])
-                        pairwise_cipher = struct.unpack('4B', rx_parcel[49:53])
-                        group_cipher = struct.unpack('4B', rx_parcel[53:57])
-                        ant = struct.unpack('4B', rx_parcel[57:61])
-                        phy_bgn = struct.unpack('I', rx_parcel[61:65])
-                        # phy_11g = struct.unpack('I', rx_parcel[61:65])
-                        # phy_11n = struct.unpack('I', rx_parcel[61:65])
-                        # phy_lr = struct.unpack('I', rx_parcel[61:65])
-                        # wps = struct.unpack('I', rx_parcel[61:65])
-                        country = struct.unpack('12B', rx_parcel[65:77])
+                        rssi = rx_parcel[40]
+                        authmode = rx_parcel[41]
+                        phy_bgn = rx_parcel[42]
 
                         # format of this struct was get from ESP-IDF -> esp_wifi_types.h -> wifi_ap_record_t
                         discover_ap = {
                                         'bssid':            bssid,
                                         'ssid':             ssid,
                                         'channel':          channel,
-                                        '2channel':         second_channel,
                                         'rssi':             rssi,
                                         'authmode':         authmode,
-                                        'pairwise_cipher':  pairwise_cipher,
-                                        'group_cipher':     group_cipher,
-                                        'ant':              ant,
-                                        'phy_bgn':          phy_bgn,
-                                        'country':          country
+                                        'phy_bgn':          phy_bgn
                                         }
                         return discover_ap, raw_data
 
@@ -183,7 +179,7 @@ class Esp32(object):
         else:
             self.ser.timeout = 5
             discover_aps = []
-            click.secho("Please, wait {} seconds while esp32 scan all channels".format(self.ser.get_settings()['timeout']))
+            click.secho("Please, wait some seconds while esp32 scan all channels")
             raw_data += self.ser.read_until(terminator=DATA_DELIMITER)
 
             while raw_data:
@@ -192,7 +188,6 @@ class Esp32(object):
                 raw_data = rest_bytes
 
             return what_we_ask, discover_aps
-            # print(raw_data)
 
         return what_we_ask, False
 
@@ -238,7 +233,7 @@ class Esp32(object):
         fin.write(struct.pack('<I', PCAP_NETWORK))
 
         current_pkt = 0
-        self.ser.timeout = 0.1
+        self.ser.timeout = 0.5
 
         raw_data = b""
 
